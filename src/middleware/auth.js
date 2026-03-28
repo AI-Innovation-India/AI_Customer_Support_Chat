@@ -4,21 +4,18 @@
  */
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_CHANGE_IN_PRODUCTION_min_32_chars!!';
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 
-// Parse agent users from env — supports JSON array or single user
 function loadAgentUsers() {
   const raw = process.env.AGENT_USERS || '';
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [parsed];
   } catch {
-    // Fallback: single user from legacy env vars
-    const user = process.env.AGENT_USER;
-    const pass = process.env.AGENT_PASS;
-    if (user && pass) return [{ user, pass }];
-    return [{ user: 'admin', pass: 'changeme123' }];
+    console.error('[Auth] AGENT_USERS must be valid JSON. Example: [{"user":"admin","pass":"yourpassword"}]');
+    return [];
   }
 }
 

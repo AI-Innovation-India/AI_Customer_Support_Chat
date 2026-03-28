@@ -10,6 +10,18 @@
  */
 require('dotenv').config();
 
+// ── Startup env validation ────────────────────────────────────
+const REQUIRED_VARS = ['SARVAM_KEY', 'GROQ_KEY'];
+const missing = REQUIRED_VARS.filter(v => !process.env[v]);
+if (missing.length) {
+  console.error(`\n[FATAL] Missing required environment variables: ${missing.join(', ')}`);
+  console.error('Copy .env.example to .env and fill in your values.\n');
+  process.exit(1);
+}
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  console.warn('[WARN] JWT_SECRET is missing or too short — using insecure default. Set a 64+ char secret in .env.');
+}
+
 const express = require('express');
 const cors    = require('cors');
 const helmet  = require('helmet');

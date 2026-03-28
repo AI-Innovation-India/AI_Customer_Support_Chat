@@ -57,8 +57,9 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const [showSummary,  setShowSummary]  = useState(false);
   const [errorMsg,     setErrorMsg]     = useState('');
   const [currentLang,  setCurrentLang]  = useState('en-IN');
-  const [agentNotes,   setAgentNotes]   = useState('');
-  const [priority,     setPriority]     = useState('Normal');
+  const [agentNotes,    setAgentNotes]    = useState('');
+  const [priority,      setPriority]      = useState('Normal');
+  const [issueSummary,  setIssueSummary]  = useState('');
 
   // Ticket confirmation state
   const [ticketStatus, setTicketStatus] = useState(null); // null | { ticketId, emailSent, customerEmailed, loading }
@@ -218,7 +219,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const handleEndSession = async () => {
     setTicketStatus({ loading: true });
     try {
-      const result = await onEndSession({ agentNotes, priority, currentLang });
+      const result = await onEndSession({ agentNotes, priority, currentLang, issueSummary });
       setTicketStatus({ ...result, loading: false });
     } catch {
       setTicketStatus({ ticketId: null, emailSent: false, customerEmailed: false, loading: false });
@@ -448,6 +449,24 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
                 ) : null)}
               </div>
 
+              {/* Issue Summary — goes into Excel + email */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>
+                  ISSUE SUMMARY <span style={{ color: '#a78bfa' }}>→ Excel &amp; Email</span>
+                </label>
+                <textarea
+                  value={issueSummary}
+                  onChange={e => setIssueSummary(e.target.value)}
+                  placeholder="Brief description of the customer's issue (e.g. AC not cooling, fault code E5)…"
+                  style={{
+                    width: '100%', padding: '9px 12px', borderRadius: 8,
+                    background: 'rgba(169,112,255,0.1)', border: '1px solid rgba(169,112,255,0.35)',
+                    color: 'white', fontFamily: 'inherit', fontSize: 12,
+                    resize: 'vertical', minHeight: 56, outline: 'none',
+                  }}
+                />
+              </div>
+
               {/* Priority */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>PRIORITY</label>
@@ -468,16 +487,16 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
 
               {/* Agent notes */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>AGENT NOTES</label>
+                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>INTERNAL NOTES (not in email)</label>
                 <textarea
                   value={agentNotes}
                   onChange={e => setAgentNotes(e.target.value)}
-                  placeholder="Add internal notes before raising ticket…"
+                  placeholder="Internal notes — not shared with customer…"
                   style={{
                     width: '100%', padding: '9px 12px', borderRadius: 8,
                     background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)',
                     color: 'white', fontFamily: 'inherit', fontSize: 12,
-                    resize: 'vertical', minHeight: 64, outline: 'none',
+                    resize: 'vertical', minHeight: 56, outline: 'none',
                   }}
                 />
               </div>

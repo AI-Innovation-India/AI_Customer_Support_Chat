@@ -18,6 +18,10 @@ router.post('/', sessionLimiter, async (req, res) => {
   if (!session || typeof session !== 'object') {
     return res.status(400).json({ error: 'Invalid session data.' });
   }
+  // Reject oversized payloads (defence against disk exhaustion)
+  if (JSON.stringify(session).length > 500_000) {
+    return res.status(413).json({ error: 'Session payload too large.' });
+  }
 
   // Add server-side metadata
   session.savedAt   = new Date().toISOString();
