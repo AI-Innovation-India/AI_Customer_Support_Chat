@@ -1,0 +1,144 @@
+.intake-screen-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.intake-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 32px 28px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.intake-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.intake-back-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.intake-back-btn:hover { background: rgba(255,255,255,0.12); }
+
+.intake-brand-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+.brand-trane { color: #E31837; }
+.brand-sep   { color: rgba(255,255,255,0.3); }
+.brand-tk    { color: #06b6d4; }
+
+.intake-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.intake-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: -8px;
+  line-height: 1.5;
+}
+
+.intake-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.intake-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.8);
+}
+
+.req      { color: #E31837; }
+.optional { color: rgba(255,255,255,0.35); font-weight: 400; font-size: 11px; margin-left: 4px; }
+
+.intake-input {
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: white;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  width: 100%;
+}
+.intake-input::placeholder { color: rgba(255,255,255,0.3); }
+.intake-input:focus {
+  border-color: var(--primary-accent) !important;
+  box-shadow: 0 0 0 3px rgba(169,112,255,0.2);
+}
+
+.intake-select {
+  padding: 11px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: white;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 160px;
+}
+.intake-select option { background: #1a0f3d; }
+
+.phone-row {
+  display: flex;
+  gap: 8px;
+}
+.phone-row .intake-input { flex: 1; }
+
+.intake-error {
+  background: rgba(227,24,55,0.15);
+  border: 1px solid rgba(227,24,55,0.35);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #fca5a5;
+}
+
+.intake-submit-btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 100px;
+  margin-top: 4px;
+  letter-spacing: 0.3px;
+}
+.intake-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+.intake-note {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255,255,255,0.3);
+  margin-top: -6px;
+}

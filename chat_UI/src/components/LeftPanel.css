@@ -1,0 +1,52 @@
+.left-panel-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+  text-align: center;
+}
+
+.mascot-wrapper {
+  background: radial-gradient(circle at center, rgba(169, 112, 255, 0.2), transparent 70%);
+  border-radius: 50%;
+  padding: 20px;
+  animation: float 4s ease-in-out infinite;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.mascot-image {
+  max-width: 250px;
+  border-radius: 12%; /* to blend slightly if not perfectly transparent */
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.4));
+}
+
+.welcome-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.welcome-desc {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .welcome-title {
+    font-size: 24px;
+  }
+  .quick-actions {
+    grid-template-columns: 1fr;
+  }
+}

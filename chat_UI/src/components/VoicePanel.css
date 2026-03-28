@@ -1,0 +1,466 @@
+.voice-panel-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  padding: 12px 0 0;
+  position: relative;
+  overflow: hidden; /* never scroll the outer shell — mic always stays visible */
+}
+
+.voice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 20px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.back-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.header-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  flex: 1;
+  text-align: center;
+}
+
+.header-spacer {
+  width: 44px;
+}
+
+.status-text {
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 8px;
+  min-height: 20px;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+  letter-spacing: 0.3px;
+}
+
+/* 
+  REALISTIC IMAGE WAVEFORM PORT 
+*/
+.realistic-waveform-container {
+  position: relative;
+  width: 250px;
+  height: 250px;
+  flex-shrink: 0; /* Prevents squishing when OptionsGrid loads */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+  z-index: 5;
+}
+
+.abstract-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 65%);
+  mask-image: radial-gradient(circle at center, black 40%, transparent 65%);
+  filter: drop-shadow(0 0 30px rgba(169, 112, 255, 0.4));
+  transition: all 0.5s ease;
+}
+
+/* Image States mapped to classes for breathing/pulsing */
+.css-blob-idle {
+  animation: floatAbstract 6s ease-in-out infinite;
+  opacity: 0.8;
+  transform: scale(0.95);
+}
+
+.css-blob-listen {
+  animation: floatAbstract 4s ease-in-out infinite, hyperPulse 2s linear infinite;
+  opacity: 1;
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 40px rgba(94, 220, 255, 0.8)) hue-rotate(-20deg);
+}
+
+.css-blob-process {
+  animation: spinAbstract 4s linear infinite;
+  opacity: 1;
+  transform: scale(1);
+  filter: drop-shadow(0 0 50px rgba(255, 125, 255, 0.8)) hue-rotate(30deg);
+}
+
+.css-blob-respond {
+  animation: floatAbstract 3s ease-in-out infinite;
+  opacity: 1;
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 40px rgba(169, 112, 255, 1));
+}
+
+@keyframes floatAbstract {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-10px) scale(0.98); }
+}
+
+@keyframes hyperPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes spinAbstract {
+  0% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(0.95) rotate(180deg); opacity: 0.8; }
+  100% { transform: scale(1) rotate(360deg); }
+}
+
+.dynamic-content-area {
+  flex: 1;
+  min-height: 0; /* critical — lets flex child shrink and scroll internally */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding: 4px 16px 8px;
+}
+
+.dynamic-content-area::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Transcript history — stacked conversation cards ── */
+.transcript-history {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+
+.abstract-description {
+  max-width: 320px;
+  text-align: center;
+  margin: 0 auto;
+}
+
+.abstract-description p {
+  font-size: 17px;
+  font-weight: 500;
+  color: #ffffff;
+  line-height: 1.4;
+}
+
+.abstract-highlight {
+  color: rgba(255, 255, 255, 0.4); /* Faded gray/purple abstract text */
+}
+
+.bottom-controls {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 40px 16px;
+  flex-shrink: 0; /* never compress — always visible */
+}
+
+.control-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.1);
+}
+
+.microphone-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  width: 150px;
+  height: 150px;
+}
+
+.mic-rings {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  pointer-events: none;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0,
+    transparent 6px,
+    rgba(169, 112, 255, 0.4) 7px,
+    transparent 8px
+  );
+  -webkit-mask-image: repeating-conic-gradient(from 0deg, black 0deg 2deg, transparent 2deg 6deg);
+  mask-image: repeating-conic-gradient(from 0deg, black 0deg 2deg, transparent 2deg 6deg);
+  animation: spinRings 20s linear infinite;
+  opacity: 0.5;
+}
+
+.mic-rings-active {
+  opacity: 1;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0,
+    transparent 6px,
+    rgba(169, 112, 255, 0.8) 7px,
+    transparent 8px
+  );
+  animation: spinRings 10s linear infinite reverse;
+}
+
+@keyframes spinRings {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.mic-button {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: #1c152c; /* Super dark purple inset */
+  border: 4px solid #6b43a6; /* Thick bright purple border */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5), inset 0 0 15px rgba(0,0,0,0.8);
+  transition: all 0.3s ease;
+}
+
+.mic-button:hover {
+  transform: scale(1.05);
+  border-color: #A970FF;
+  box-shadow: 0 0 25px rgba(169, 112, 255, 0.6), inset 0 0 10px rgba(0,0,0,0.8);
+}
+
+.mic-active {
+  background: #251b3d;
+  border-color: #8A4BDE;
+  animation: pulseMic 2s ease-in-out infinite;
+}
+
+@keyframes pulseMic {
+  0%, 100% { box-shadow: 0 0 15px rgba(169, 112, 255, 0.5); transform: scale(1); }
+  50% { box-shadow: 0 0 35px rgba(169, 112, 255, 0.9); transform: scale(1.02); }
+}
+
+.chat-support-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(26, 15, 61, 0.95);
+  z-index: 100;
+  border-radius: inherit;
+}
+
+/* ── Yazhni greeting box ── */
+.aria-greeting-box {
+  width: 100%;
+  padding: 10px 14px;
+  margin: 0 auto 8px;
+  border-radius: 14px;
+  background: rgba(169, 112, 255, 0.08);
+  border: 1px solid rgba(169, 112, 255, 0.2);
+}
+.aria-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+.aria-greeting-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255,255,255,0.88);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;       /* cap at 3 lines — keeps height predictable */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mic-ripple {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid rgba(169,112,255,0.6);
+  animation: ripple 1.5s ease-out infinite;
+  pointer-events: none;
+}
+
+.mic-disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Fade-in animations ── */
+.fade-in-up {
+  animation: fadeInUp 0.4s ease-out both;
+}
+.delay-2 { animation-delay: 0.15s; }
+.delay-3 { animation-delay: 0.25s; }
+
+/* ── Icon glass button (header back/action buttons) ── */
+.icon-glass-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.icon-glass-button:hover {
+  background: rgba(169, 112, 255, 0.15);
+  box-shadow: 0 0 12px rgba(169, 112, 255, 0.3);
+}
+
+/* ── Full-panel overlay (text chat + summary) ── */
+.vp-overlay {
+  position: absolute;
+  inset: 0;
+  background: #0e0822; /* fully opaque — no bleed-through */
+  z-index: 200;
+  border-radius: inherit;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Summary overlay — scrollable card inside the overlay ── */
+.vp-overlay-summary {
+  justify-content: center;
+  align-items: center;
+  padding: 20px 16px;
+}
+
+.vp-overlay-summary > div,
+.vp-overlay-summary > .ticket-confirm {
+  width: 100%;
+  max-width: 420px;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.vp-overlay-summary > div::-webkit-scrollbar,
+.vp-overlay-summary > .ticket-confirm::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Ticket confirmation screen ── */
+.ticket-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+}
+
+.ticket-id-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  border-radius: 14px;
+  padding: 14px 28px;
+  margin: 12px 0 20px;
+  width: 100%;
+}
+
+.ticket-status-rows {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ticket-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ── Session summary info grid ── */
+.summary-info-grid {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.summary-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.summary-info-label {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  flex-shrink: 0;
+}
+
+.summary-info-value {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  text-align: right;
+  word-break: break-word;
+}

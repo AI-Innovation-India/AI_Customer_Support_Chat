@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+chat_UI/node_modules/
+
+# Environment — NEVER commit real keys (.env.example is safe to commit)
+.env
+
+# Customer data — may contain PII
+exports/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/settings.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Vite dev cache (src/public is committed — it's needed by the server)
+chat_UI/.vite/
+chat_UI/dist/

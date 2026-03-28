@@ -1,0 +1,58 @@
+{
+  "skill_name": "voice-chat-support-agent",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Build me a voice chat customer support agent as a single HTML file. Use Sarvam AI (saarika:v2.5 for speech-to-text, bulbul:v2 for TTS) and Azure OpenAI GPT-3.5. Support all 11 Indian languages. The UI should look like WhatsApp with voice note bubbles and a waveform. Auto-play AI voice responses. Include a text fallback mode and a session summary panel. Save the file as support-agent.html",
+      "expected_output": "A complete, working support-agent.html file with all required features",
+      "files": [],
+      "assertions": [
+        {"id": "single-file", "text": "Output is a single .html file with no external framework imports (no CDN links for React/Vue/Angular)"},
+        {"id": "all-11-languages", "text": "HTML contains all 11 Sarvam language codes: hi-IN, bn-IN, kn-IN, ml-IN, mr-IN, od-IN, pa-IN, ta-IN, te-IN, gu-IN, en-IN"},
+        {"id": "sarvam-stt", "text": "Uses Sarvam STT endpoint (api.sarvam.ai/speech-to-text) with saarika:v2.5 model"},
+        {"id": "sarvam-tts", "text": "Uses Sarvam TTS endpoint (api.sarvam.ai/text-to-speech) with bulbul:v2 model"},
+        {"id": "azure-openai", "text": "Calls Azure OpenAI endpoint with api-key header and chat/completions path"},
+        {"id": "mediarecorder", "text": "Uses MediaRecorder API and getUserMedia for voice capture"},
+        {"id": "waveform", "text": "Includes canvas-based waveform visualization"},
+        {"id": "session-summary", "text": "Has a session summary panel showing customer name, issue, and contact"},
+        {"id": "text-fallback", "text": "Has a text input field for typed messages"},
+        {"id": "auto-play", "text": "Auto-plays AI audio response after TTS synthesis"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I need a customer support voice bot for my e-commerce company. Single HTML page, no frameworks. It should record voice using the browser mic, transcribe with Sarvam AI, send to Azure OpenAI for a response, speak back using Sarvam TTS. Users should be able to select from Hindi, Tamil, Telugu, Bengali, and other Indian languages. Make it look professional with WhatsApp-style chat bubbles. Save as ecommerce-support.html",
+      "expected_output": "A customized e-commerce support HTML file with appropriate system prompt",
+      "files": [],
+      "assertions": [
+        {"id": "single-file", "text": "Output is a single .html file with no external framework imports"},
+        {"id": "sarvam-stt", "text": "Uses Sarvam STT endpoint with saarika:v2.5"},
+        {"id": "sarvam-tts", "text": "Uses Sarvam TTS endpoint with bulbul:v2"},
+        {"id": "azure-openai", "text": "Calls Azure OpenAI with proper headers"},
+        {"id": "mediarecorder", "text": "Uses MediaRecorder and getUserMedia"},
+        {"id": "indian-languages", "text": "Includes multiple Indian language options including Hindi, Tamil, Telugu, Bengali"},
+        {"id": "chat-bubbles", "text": "Has WhatsApp-style chat bubble UI elements"},
+        {"id": "text-fallback", "text": "Has text input fallback"},
+        {"id": "auto-play", "text": "Auto-plays AI audio"}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Create a voice support agent HTML page for a bank. It needs: 11 Indian language support via Sarvam AI, Azure OpenAI backend, MediaRecorder API for voice capture, waveform visualization in chat bubbles, a session summary that captures customer name/issue/phone number, and a settings panel for API keys. The agent should be polite and professional. Output file: bank-support.html",
+      "expected_output": "A banking-themed support agent with appropriate security messaging in system prompt",
+      "files": [],
+      "assertions": [
+        {"id": "single-file", "text": "Output is a single .html file"},
+        {"id": "all-11-languages", "text": "Includes all 11 Indian language options"},
+        {"id": "sarvam-stt", "text": "Uses Sarvam STT with saarika:v2.5"},
+        {"id": "sarvam-tts", "text": "Uses Sarvam TTS with bulbul:v2"},
+        {"id": "azure-openai", "text": "Calls Azure OpenAI chat completions"},
+        {"id": "mediarecorder", "text": "Uses MediaRecorder API"},
+        {"id": "waveform", "text": "Has waveform visualization in voice bubbles"},
+        {"id": "session-summary-fields", "text": "Session summary captures name, issue, and phone/contact"},
+        {"id": "security-aware", "text": "System prompt warns against sharing OTP or passwords"},
+        {"id": "auto-play", "text": "Auto-plays AI audio response"}
+      ]
+    }
+  ]
+}

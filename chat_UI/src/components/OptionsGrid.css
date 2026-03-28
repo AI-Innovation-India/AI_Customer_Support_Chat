@@ -1,0 +1,63 @@
+.options-panel-container {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px;
+  border-radius: 18px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.options-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Compact horizontal card: icon left, text right */
+.option-card {
+  background: rgba(169, 112, 255, 0.1);
+  border: 1px solid rgba(169, 112, 255, 0.2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+}
+
+.option-card:hover {
+  background: rgba(169, 112, 255, 0.25);
+  border-color: rgba(169, 112, 255, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(169, 112, 255, 0.2);
+}
+
+.option-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.option-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}

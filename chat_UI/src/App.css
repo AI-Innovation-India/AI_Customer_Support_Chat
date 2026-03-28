@@ -1,0 +1,66 @@
+.app-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* Premium Ambient Background Orbs */
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  z-index: 0;
+  animation: orbFloat 20s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+.orb-1 { 
+  width: 40vw; height: 40vw; max-width: 600px; max-height: 600px;
+  background: rgba(169, 112, 255, 0.15); 
+  top: -10%; left: -10%; 
+}
+.orb-2 { 
+  width: 50vw; height: 50vw; max-width: 700px; max-height: 700px;
+  background: rgba(94, 220, 255, 0.1); 
+  bottom: -20%; right: -10%; 
+  animation-delay: -7s; 
+}
+.orb-3 { 
+  width: 30vw; height: 30vw; max-width: 500px; max-height: 500px;
+  background: rgba(255, 125, 255, 0.1); 
+  top: 30%; right: 20%; 
+  animation-delay: -14s; 
+}
+
+@keyframes orbFloat {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(5%, 10%) scale(1.1); }
+  100% { transform: translate(-5%, 5%) scale(0.9); }
+}
+
+.screen-wrapper {
+  width: 100%;
+  height: 100%;
+  max-width: 600px; /* Keep it centered and clean for mobile/tablet feel on desktop */
+  display: flex;
+  flex-direction: column;
+  z-index: 10; /* Above orbs */
+}
+
+.fade-in-screen {
+  animation: fadeInScreen 0.4s ease-out forwards;
+}
+
+@keyframes fadeInScreen {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 768px) {
+  #root {
+    padding: 0; /* Full bleed on mobile */
+  }
+}
