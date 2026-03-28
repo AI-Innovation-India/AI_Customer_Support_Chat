@@ -241,18 +241,16 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const isBusy = voiceState === 'Processing';
   const isListening = voiceState === 'Listening';
 
-  // Text chat: absolute-positioned overlay — bypasses all flex height/width inheritance
+  // Text chat: 100% inline styles — no CSS class dependencies, guaranteed layout
   if (showChat) {
     return (
-      <div className="voice-panel-container">
-        <div className="chat-overlay-wrapper">
-          <ChatSupport
-            onClose={() => setShowChat(false)}
-            onEndSession={() => { setShowChat(false); setShowSummary(true); }}
-            getAIResponse={getAIResponse}
-            speakText={speakText}
-          />
-        </div>
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#0e0822', overflow: 'hidden' }}>
+        <ChatSupport
+          onClose={() => setShowChat(false)}
+          onEndSession={() => { setShowChat(false); setShowSummary(true); }}
+          getAIResponse={getAIResponse}
+          speakText={speakText}
+        />
       </div>
     );
   }
