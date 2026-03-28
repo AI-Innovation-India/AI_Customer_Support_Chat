@@ -356,18 +356,16 @@
 .vp-overlay {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;        /* explicit — makes flex children's flex:1 resolve correctly */
   background: #0e0822;
   z-index: 200;
   border-radius: inherit;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
-/* ── Summary overlay — scrollable card inside the overlay ── */
+/* ── Summary overlay — centred card layout ── */
 .vp-overlay-summary {
+  display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 20px 16px;
