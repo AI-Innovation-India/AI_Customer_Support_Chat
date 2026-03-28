@@ -1,26 +1,23 @@
-/* ── Panel fills flex parent, uses position:relative as anchor ── */
+/* ── Outer panel: flex child of chat-overlay-wrapper (definite height) ── */
 .chat-support-panel {
-  flex: 1 1 0;
+  flex: 1;
   min-height: 0;
-  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  background: transparent;
+  overflow: hidden;
 }
 
-/* ── Header: pinned to top, explicit height ── */
+/* ── Header row: fixed height, always visible ── */
 .chat-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   height: 60px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 20px;
   border-bottom: 1px solid rgba(169, 112, 255, 0.3);
-  background: rgba(14, 8, 34, 0.6);
-  z-index: 1;
+  background: rgba(169, 112, 255, 0.06);
 }
 
 .chat-header h3 {
@@ -46,39 +43,33 @@
   opacity: 0.7;
   transition: opacity 0.2s;
   padding: 4px;
+  line-height: 1;
 }
-
 .icon-close-btn:hover { opacity: 1; }
 
 .end-session-btn {
   font-size: 11px;
   font-weight: 600;
   color: #fca5a5;
-  background: rgba(220, 38, 38, 0.12);
-  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.4);
   border-radius: 20px;
   padding: 4px 10px;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.2s;
 }
+.end-session-btn:hover { background: rgba(220, 38, 38, 0.3); }
 
-.end-session-btn:hover {
-  background: rgba(220, 38, 38, 0.25);
-}
-
-/* ── Messages: fills the space between header and input ── */
+/* ── Messages: flex:1 fills remaining space, scrolls internally ── */
 .chat-messages {
-  position: absolute;
-  top: 61px;
-  left: 0;
-  right: 0;
-  bottom: 74px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 14px 20px;
+  padding: 16px 20px;
 }
 
 .chat-messages::-webkit-scrollbar { width: 4px; }
@@ -88,12 +79,9 @@
   border-radius: 10px;
 }
 
-/* ── Input row: pinned to bottom ── */
+/* ── Input row: fixed height at bottom ── */
 .chat-input-area {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   height: 74px;
   display: flex;
   gap: 10px;
@@ -114,12 +102,10 @@
   font-size: 14px;
   transition: border-color 0.2s;
 }
-
 .chat-input:focus {
   border-color: var(--primary-accent);
   box-shadow: 0 0 8px rgba(169, 112, 255, 0.2);
 }
-
 .chat-input::placeholder { color: rgba(255, 255, 255, 0.35); }
 
 .chat-send-btn {
@@ -135,11 +121,7 @@
   border: 1px solid rgba(169, 112, 255, 0.35);
   transition: all 0.2s;
 }
-
-.chat-send-btn:hover {
-  background: rgba(169, 112, 255, 0.3);
-  transform: scale(1.05);
-}
+.chat-send-btn:hover { background: rgba(169, 112, 255, 0.3); transform: scale(1.05); }
 
 /* ── Message bubbles ── */
 .message-wrapper { display: flex; width: 100%; }
@@ -169,21 +151,13 @@
   border-bottom-left-radius: 4px;
 }
 
-/* Typing indicator */
-.typing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 16px;
-}
-
+/* Typing dots */
+.typing-indicator { display: flex; align-items: center; gap: 4px; padding: 12px 16px; }
 .typing-indicator span {
-  width: 6px;
-  height: 6px;
+  width: 6px; height: 6px;
   background: var(--secondary-accent);
   border-radius: 50%;
   animation: bounceDots 1.4s infinite ease-in-out;
 }
-
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
