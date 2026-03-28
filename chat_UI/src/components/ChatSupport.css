@@ -1,10 +1,11 @@
 .chat-support-panel {
-  flex: 1;
-  min-height: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   padding: 20px;
   background: transparent;
+  box-sizing: border-box;
 }
 
 .chat-header {
@@ -41,6 +42,7 @@
 
 .chat-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

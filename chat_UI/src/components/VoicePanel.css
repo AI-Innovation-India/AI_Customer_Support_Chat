@@ -352,7 +352,18 @@
   box-shadow: 0 0 12px rgba(169, 112, 255, 0.3);
 }
 
-/* ── Full-panel overlay (text chat + summary) ── */
+/* ── Text chat overlay — absolute fill, bypasses flex alignment ── */
+.chat-overlay-wrapper {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  background: #0e0822;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Full-panel overlay (summary only) ── */
 .vp-overlay {
   position: absolute;
   inset: 0;
