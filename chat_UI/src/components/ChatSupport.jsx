@@ -8,7 +8,7 @@ const INJECTION_PATTERNS = [
   /reveal\s+(your\s+)?(system\s+prompt|instructions?|api\s+key)/i,
 ];
 
-const ChatSupport = ({ onClose, getAIResponse, speakText }) => {
+const ChatSupport = ({ onClose, onEndSession, getAIResponse, speakText }) => {
   const [messages, setMessages] = useState([]);
   const [inputVal, setInputVal] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -22,7 +22,6 @@ const ChatSupport = ({ onClose, getAIResponse, speakText }) => {
     const text = inputVal.trim();
     if (!text || isTyping) return;
 
-    // Guard rails
     if (INJECTION_PATTERNS.some(p => p.test(text))) {
       setMessages(prev => [...prev,
         { id: Date.now(),     sender: 'user', text },
@@ -42,7 +41,7 @@ const ChatSupport = ({ onClose, getAIResponse, speakText }) => {
       setIsTyping(false);
       setMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: aiText }]);
       if (speakText) speakText(aiText).catch(() => {});
-    } catch (err) {
+    } catch {
       setIsTyping(false);
       setMessages(prev => [...prev, {
         id: Date.now() + 1, sender: 'ai',
@@ -55,34 +54,47 @@ const ChatSupport = ({ onClose, getAIResponse, speakText }) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  const handleEndSession = () => {
+    // Close chat, then trigger session end (shows summary + raises ticket)
+    onClose();
+    if (onEndSession) onEndSession();
+  };
+
   return (
     <div className="chat-support-panel">
       <div className="chat-header">
-        <h3 className="neon-text-primary">Text Support</h3>
-        <button className="icon-close-btn" onClick={onClose}>
-          <X size={20} color="#fff" />
-        </button>
+        <h3>Text Support</h3>
+        <div className="chat-header-actions">
+          {onEndSession && (
+            <button className="end-session-btn" onClick={handleEndSession}>
+              End Session
+            </button>
+          )}
+          <button className="icon-close-btn" onClick={onClose} title="Back to voice">
+            <X size={18} color="#fff" />
+          </button>
+        </div>
       </div>
 
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="message-wrapper ai">
-            <div className="message-bubble ai-bubble glass-panel" style={{ fontSize: 13, opacity: 0.7 }}>
-              Type your question and I'll respond here.
+            <div className="message-bubble ai-bubble" style={{ fontSize: 12, opacity: 0.65 }}>
+              Type your question below and I'll respond here.
             </div>
           </div>
         )}
         {messages.map(msg => (
           <div key={msg.id} className={`message-wrapper ${msg.sender}`}>
-            <div className={`message-bubble ${msg.sender}-bubble glass-panel`}>
+            <div className={`message-bubble ${msg.sender}-bubble`}>
               {msg.text}
             </div>
           </div>
         ))}
         {isTyping && (
           <div className="message-wrapper ai">
-            <div className="message-bubble ai-bubble glass-panel typing-indicator">
-              <span></span><span></span><span></span>
+            <div className="message-bubble ai-bubble typing-indicator">
+              <span /><span /><span />
             </div>
           </div>
         )}
@@ -93,14 +105,14 @@ const ChatSupport = ({ onClose, getAIResponse, speakText }) => {
         <input
           type="text"
           placeholder="Type your message..."
-          className="chat-input glass-panel"
+          className="chat-input"
           value={inputVal}
           onChange={e => setInputVal(e.target.value)}
           onKeyDown={handleKeyDown}
           autoFocus
         />
-        <button className="chat-send-btn glass-panel" onClick={handleSend} disabled={isTyping}>
-          <Send size={18} color="#A970FF" />
+        <button className="chat-send-btn" onClick={handleSend} disabled={isTyping}>
+          <Send size={16} color="#A970FF" />
         </button>
       </div>
     </div>

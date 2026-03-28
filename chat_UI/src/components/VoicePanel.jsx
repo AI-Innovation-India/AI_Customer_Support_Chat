@@ -248,6 +248,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
         <div className="chat-overlay-wrapper">
           <ChatSupport
             onClose={() => setShowChat(false)}
+            onEndSession={() => { setShowChat(false); setShowSummary(true); }}
             getAIResponse={getAIResponse}
             speakText={speakText}
           />
