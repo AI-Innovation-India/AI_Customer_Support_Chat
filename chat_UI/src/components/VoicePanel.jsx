@@ -240,6 +240,19 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const isBusy = voiceState === 'Processing';
   const isListening = voiceState === 'Listening';
 
+  // Text chat: full-screen swap — no overlay, no height games
+  if (showChat) {
+    return (
+      <div className="voice-panel-container">
+        <ChatSupport
+          onClose={() => setShowChat(false)}
+          getAIResponse={getAIResponse}
+          speakText={speakText}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="voice-panel-container">
 
@@ -346,17 +359,6 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           <Bookmark size={20} color="#E5E7EB" />
         </button>
       </div>
-
-      {/* ── Text chat overlay ── */}
-      {showChat && (
-        <div className="vp-overlay">
-          <ChatSupport
-            onClose={() => setShowChat(false)}
-            getAIResponse={getAIResponse}
-            speakText={speakText}
-          />
-        </div>
-      )}
 
       {/* ── Session summary + ticket overlay ── */}
       {showSummary && (
