@@ -1,21 +1,21 @@
+/* ── Chat panel fills its absolute-positioned wrapper via grid ── */
 .chat-support-panel {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  background: transparent;
+  display: grid;
+  grid-template-rows: 60px 1fr 74px;
   box-sizing: border-box;
+  background: transparent;
 }
 
+/* ── Header row (fixed 60px) ── */
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-shrink: 0;
-  margin-bottom: 16px;
-  padding-bottom: 14px;
+  padding: 0 20px;
   border-bottom: 1px solid rgba(169, 112, 255, 0.25);
+  flex-shrink: 0;
 }
 
 .chat-header h3 {
@@ -40,15 +40,14 @@
   opacity: 1;
 }
 
+/* ── Messages row (1fr = all remaining space) ── */
 .chat-messages {
-  flex: 1;
-  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-right: 8px;
-  margin-bottom: 20px;
+  padding: 14px 20px;
+  min-height: 0;
 }
 
 /* Custom scrollbar */
@@ -80,13 +79,12 @@
 .message-bubble {
   max-width: 80%;
   padding: 12px 16px;
-  fontSize: 14px;
+  font-size: 14px;
   line-height: 1.5;
   border-radius: 20px;
   animation: fadeInUp 0.3s ease forwards;
 }
 
-/* Right aligned user */
 .user-bubble {
   background: var(--primary-accent);
   color: white;
@@ -95,13 +93,12 @@
   box-shadow: 0 4px 15px rgba(169, 112, 255, 0.3);
 }
 
-/* Left aligned ai */
 .ai-bubble {
   background: var(--glass-bg);
   border-bottom-left-radius: 4px;
 }
 
-/* Typing Indicator Animation */
+/* Typing indicator */
 .typing-indicator {
   display: flex;
   align-items: center;
@@ -120,11 +117,13 @@
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
 
+/* ── Input row (fixed 74px) ── */
 .chat-input-area {
   display: flex;
   gap: 12px;
-  flex-shrink: 0;
-  padding-top: 12px;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 1px solid rgba(169, 112, 255, 0.1);
 }
 
 .chat-input {
@@ -160,15 +159,10 @@
   background: var(--glass-bg);
   border: 1px solid rgba(169, 112, 255, 0.3);
   transition: all 0.3s ease;
+  flex-shrink: 0;
 }
 
 .chat-send-btn:hover {
   background: rgba(169, 112, 255, 0.2);
   transform: scale(1.05);
-}
-
-@media (max-width: 768px) {
-  .chat-support-panel {
-    border-radius: 0;
-  }
 }
