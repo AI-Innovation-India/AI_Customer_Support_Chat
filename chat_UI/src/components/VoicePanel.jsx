@@ -241,20 +241,6 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const isBusy = voiceState === 'Processing';
   const isListening = voiceState === 'Listening';
 
-  // Text chat: 100% inline styles — no CSS class dependencies, guaranteed layout
-  if (showChat) {
-    return (
-      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#0e0822', overflow: 'hidden' }}>
-        <ChatSupport
-          onClose={() => setShowChat(false)}
-          onEndSession={() => { setShowChat(false); setShowSummary(true); }}
-          getAIResponse={getAIResponse}
-          speakText={speakText}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="voice-panel-container">
 
@@ -361,6 +347,21 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           <Bookmark size={20} color="#E5E7EB" />
         </button>
       </div>
+
+      {/* ── Text chat overlay — same absolute context as summary, all inline styles ── */}
+      {showChat && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          background: '#0e0822', zIndex: 200, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}>
+          <ChatSupport
+            onClose={() => setShowChat(false)}
+            onEndSession={() => { setShowChat(false); setShowSummary(true); }}
+            getAIResponse={getAIResponse}
+            speakText={speakText}
+          />
+        </div>
+      )}
 
       {/* ── Session summary + ticket overlay ── */}
       {showSummary && (
