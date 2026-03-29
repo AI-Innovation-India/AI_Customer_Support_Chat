@@ -227,6 +227,7 @@ class KnowledgeBase:
 
         chunk_ids = [f"{doc_id}#{i}" for i in range(len(chunks))]
 
+        # ── Step 1: Pinecone vector store (always, fast) ──────────────────────
         if USE_AZURE_EMBED:
             self._upsert_azure(doc_id, filename, category, chunks, chunk_ids)
         else:
@@ -242,8 +243,12 @@ class KnowledgeBase:
             "embed_mode":  "azure" if USE_AZURE_EMBED else "pinecone",
         }
         self._save_meta()
-        logger.info(f"Ingested '{filename}' → {len(chunks)} chunks (doc_id={doc_id})")
-        return {"doc_id": doc_id, "filename": filename, "chunks": len(chunks)}
+        logger.info(f"Pinecone: ingested '{filename}' → {len(chunks)} chunks (doc_id={doc_id})")
+
+        # ── Step 2: KG ingestion returned to caller as background task ────────
+        # main.py schedules kg.ingest_chunks(doc_id, filename, chunks) async
+        # so the HTTP response returns immediately after Pinecone is done
+        return {"doc_id": doc_id, "filename": filename, "chunks": len(chunks), "_chunks": chunks}
 
     def _upsert_azure(self, doc_id, filename, category, chunks, chunk_ids):
         """Pre-compute embeddings via Azure then upsert vectors to Pinecone."""

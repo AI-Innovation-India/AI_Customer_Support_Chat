@@ -14,28 +14,28 @@ const router = express.Router();
 
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://localhost:8000';
 
-// ── Fetch grounded context from RAG service ───────────────────────────────────
-// Returns { context, grounded, source } or null if service is offline.
-// "grounded" = true  → real content found (KB or official web search)
-// "grounded" = false → nothing found; AI must NOT guess
+// ── Fetch grounded context from RAG+KG service ────────────────────────────────
+// Returns { context, grounded, source, hasKG } or null if offline.
+// context already contains both document chunks + KG facts merged by Python service.
 async function getKBContext(question) {
   try {
     const r = await fetch(`${RAG_SERVICE_URL}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, top_k: 5 }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),   // KG search can take slightly longer
     });
     if (!r.ok) return null;
     const data = await r.json();
     return {
       context:  data.context || '',
       grounded: data.grounded === true,
-      source:   data.source || 'none',
-      total:    data.total  || 0,
+      source:   data.source  || 'none',
+      total:    data.total   || 0,
+      hasKG:    (data.kg_facts || []).length > 0,
     };
   } catch {
-    return null;   // RAG service offline — fall back to pure-prompt mode
+    return null;   // service offline — pure-prompt fallback
   }
 }
 
@@ -80,34 +80,41 @@ router.post('/', chatLimiter, sanitizeChat, async (req, res) => {
   }
 
   if (rag && rag.grounded && rag.context) {
-    // ── GROUNDED: real content found — use it, don't invent anything extra ──
+    // ── GROUNDED: real content from KB and/or KG ─────────────────────────────
     const sourceLabel = rag.source === 'web_search'
       ? 'OFFICIAL WEBSITE CONTENT (trane.com / thermoking.com)'
-      : 'COMPANY KNOWLEDGE BASE';
+      : rag.source === 'knowledge_base+knowledge_graph'
+        ? 'COMPANY KNOWLEDGE BASE + PRODUCT KNOWLEDGE GRAPH'
+        : rag.source === 'knowledge_graph'
+          ? 'PRODUCT KNOWLEDGE GRAPH'
+          : 'COMPANY KNOWLEDGE BASE';
+
     systemPrompt += `
 
 --- ${sourceLabel} ---
-${rag.context.slice(0, 6000)}
+${rag.context.slice(0, 7000)}
 --- END ---
 
 STRICT RULES FOR THIS RESPONSE:
 - Answer using ONLY the knowledge provided above.
-- Do NOT add specifications, fault codes, part numbers, or procedures that are not in the above content.
-- If the knowledge above partially covers the question, answer what you can and say "For complete details, please visit trane.com or thermoking.com."
-- Keep your response to 2-3 sentences as always.`;
+- The "DOCUMENT KNOWLEDGE" section contains text from uploaded manuals — quote it accurately.
+- The "PRODUCT RELATIONSHIPS & FACTS" section contains extracted entity relationships — use these to give specific, connected answers (part numbers, fault causes, compatible models, service steps).
+- Do NOT invent specifications, fault codes, part numbers, or procedures not shown above.
+- If the knowledge partially covers the question, answer what you can and say "For complete details, please visit trane.com or thermoking.com."
+- Keep responses to 2-3 sentences — they are read aloud.`;
 
   } else if (rag && !rag.grounded) {
-    // ── NO GROUNDED CONTENT — strict instruction not to guess ────────────────
+    // ── NOTHING FOUND — strict no-hallucinate instruction ────────────────────
     systemPrompt += `
 
 IMPORTANT — NO PRODUCT KNOWLEDGE FOUND FOR THIS QUESTION:
-The knowledge base and official websites have no specific information for this query.
+Neither the knowledge base nor the knowledge graph has specific information for this query.
 You MUST NOT guess, invent, or approximate technical details, fault codes, part numbers, or specifications.
-Instead, say something like: "I don't have the specific details for that in my knowledge base right now. I'd recommend visiting trane.com or thermoking.com, or I can raise a support ticket and our technical team will follow up with you."
+Say: "I don't have the specific details for that right now. I'd recommend visiting trane.com or thermoking.com, or I can raise a support ticket and our technical team will follow up with you directly."
 Do NOT make up any technical information.`;
 
   }
-  // rag === null means RAG service is offline — pure prompt mode, no extra instruction
+  // rag === null → RAG service offline, pure-prompt mode (no extra instruction)
 
   const useAzure = process.env.USE_AZURE === 'true';
 

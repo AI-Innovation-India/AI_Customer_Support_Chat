@@ -3,25 +3,26 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 python-dotenv==1.0.1
 
-# Embeddings:
-#   Option A (auto-detected): Azure OpenAI text-embedding-3-small
-#   Option B (fallback):      Pinecone built-in multilingual-e5-large
-# openai package needed for Option A — harmless to install even if not used
-openai==1.51.0
+# ── Vector search (Pinecone) ─────────────────────────────────────
+pinecone>=6.0.0
 
-# Vector DB — Pinecone
-pinecone==5.4.2
+# ── Knowledge Graph (Graphiti + Neo4j AuraDB) ────────────────────
+graphiti-core==0.28.2
+neo4j>=5.26.0
 
-# Web search fallback (Tavily — optional, set TAVILY_API_KEY to enable)
+# ── Azure OpenAI / OpenAI — embeddings + LLM for Graphiti ────────
+openai>=1.91.0
+
+# ── Web search fallback (Tavily) — optional ─────────────────────
 httpx==0.27.2
 
-# Document parsers
-PyMuPDF==1.24.11        # PDF
-python-docx==1.1.2      # Word
-openpyxl==3.1.5         # Excel
-pandas==2.2.3           # Excel/CSV tabular data
-beautifulsoup4==4.12.3  # URL scraping
-requests==2.32.3        # URL fetch
+# ── Document parsers ─────────────────────────────────────────────
+PyMuPDF==1.24.11
+python-docx==1.1.2
+openpyxl==3.1.5
+pandas==2.2.3
+beautifulsoup4==4.12.3
+requests==2.32.3
 
-# LangChain for chunking only
+# ── Chunking ─────────────────────────────────────────────────────
 langchain-text-splitters==0.3.0
