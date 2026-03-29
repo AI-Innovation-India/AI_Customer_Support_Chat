@@ -16,8 +16,27 @@ Group ID strategy:
 """
 
 import os
+import re
 import logging
 from datetime import datetime, timezone
+
+# ── Prompt injection patterns — applied to every chunk before KG ingest ────────
+# Prevents adversarial content in uploaded PDFs from hijacking the LLM extraction
+_INJECTION_PATTERNS = [
+    re.compile(r'ignore\s+(all\s+)?(previous|prior|above|earlier)\s+instructions?', re.I),
+    re.compile(r'disregard\s+(all\s+)?(previous|prior|your)\s+instructions?', re.I),
+    re.compile(r'you\s+are\s+now\s+(a\s+)?(different|unrestricted|free|DAN)', re.I),
+    re.compile(r'\bDAN\b'),
+    re.compile(r'jailbreak', re.I),
+    re.compile(r'reveal\s+(your\s+)?(system\s+prompt|api\s+key|instructions?)', re.I),
+    re.compile(r'override\s+(your\s+)?(instructions?|system|prompt)', re.I),
+    re.compile(r'forget\s+(everything|all|your\s+instructions?)', re.I),
+    re.compile(r'act\s+as\s+(if\s+you\s+(are|were)\s+)?(?:DAN|an?\s+unrestricted)', re.I),
+]
+
+def _is_safe_chunk(text: str) -> bool:
+    """Return False if the chunk contains prompt injection patterns."""
+    return not any(p.search(text) for p in _INJECTION_PATTERNS)
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +130,9 @@ class KnowledgeGraph:
             self.ready = True
             logger.info(f"KG ready — Neo4j AuraDB at {NEO4J_URI[:40]}…")
         except Exception as e:
-            logger.error(f"KG init failed: {e} — KG search disabled")
+            import traceback
+            logger.error(f"KG init failed — KG search disabled")
+            logger.error(traceback.format_exc())
             self.ready = False
 
     async def close(self):
@@ -130,15 +151,20 @@ class KnowledgeGraph:
         if not self.ready:
             return
 
-        logger.info(f"KG: ingesting {len(chunks)} chunks from '{filename}' …")
+        safe_chunks = [c for c in chunks if _is_safe_chunk(c)]
+        skipped = len(chunks) - len(safe_chunks)
+        if skipped:
+            logger.warning(f"KG: skipped {skipped} chunks from '{filename}' — prompt injection detected")
+
+        logger.info(f"KG: ingesting {len(safe_chunks)} chunks from '{filename}' …")
         from graphiti_core.nodes import EpisodeType
 
-        for i, chunk in enumerate(chunks):
+        for i, chunk in enumerate(safe_chunks):
             try:
                 await self._graphiti.add_episode(
                     name=f"{doc_id}#{i}",
                     episode_body=chunk,
-                    source_description=f"Document: {filename}, chunk {i + 1} of {len(chunks)}",
+                    source_description=f"Document: {filename}, chunk {i + 1} of {len(safe_chunks)}",
                     reference_time=datetime.now(timezone.utc),
                     source=EpisodeType.text,
                     group_id=doc_id,
