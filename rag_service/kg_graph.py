@@ -17,8 +17,12 @@ Group ID strategy:
 
 import os
 import re
+import ssl
 import logging
+import asyncio
 from datetime import datetime, timezone
+
+import certifi
 
 # ── Prompt injection patterns — applied to every chunk before KG ingest ────────
 # Prevents adversarial content in uploaded PDFs from hijacking the LLM extraction
@@ -52,6 +56,69 @@ AZURE_EMBED_DEPLOY    = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-sm
 OPENAI_API_KEY        = os.getenv("OPENAI_API_KEY", "")
 
 KG_ENABLED = bool(NEO4J_URI and NEO4J_PASSWORD)
+
+
+# ── No-op cross-encoder ────────────────────────────────────────────────────────
+# Graphiti defaults to OpenAIRerankerClient (requires OPENAI_API_KEY).
+# When using Azure-only we inject this identity reranker instead.
+# Results are returned in original order — good enough for product KB search.
+class _IdentityCrossEncoder:
+    async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
+        return [(p, 1.0) for p in passages]
+
+
+# ── SSL-aware Neo4j driver ─────────────────────────────────────────────────────
+# On Windows, Python's SSL store may not trust AuraDB's cert chain.
+# We subclass Neo4jDriver to inject certifi's CA bundle.
+def _build_neo4j_driver(uri: str, user: str, password: str):
+    """Return a Neo4jDriver that uses certifi's CA bundle for TLS verification."""
+    from neo4j import AsyncGraphDatabase
+    from graphiti_core.driver.driver import GraphDriver
+    from graphiti_core.driver.neo4j_driver import (
+        Neo4jDriver,
+        Neo4jEntityNodeOperations, Neo4jEpisodeNodeOperations,
+        Neo4jCommunityNodeOperations, Neo4jSagaNodeOperations,
+        Neo4jEntityEdgeOperations, Neo4jEpisodicEdgeOperations,
+        Neo4jCommunityEdgeOperations, Neo4jHasEpisodeEdgeOperations,
+        Neo4jNextEpisodeEdgeOperations, Neo4jSearchOperations,
+        Neo4jGraphMaintenanceOperations,
+    )
+
+    class _CertifiedDriver(Neo4jDriver):
+        def __init__(self, uri, user, password, database="neo4j"):
+            # Bypass Neo4jDriver.__init__ — call the ABC base instead
+            GraphDriver.__init__(self)
+
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+            self.client = AsyncGraphDatabase.driver(
+                uri=uri,
+                auth=(user or "", password or ""),
+                ssl_context=ssl_ctx,
+            )
+            self._database = database
+
+            # Re-create operation objects (same as Neo4jDriver.__init__)
+            self._entity_node_ops    = Neo4jEntityNodeOperations()
+            self._episode_node_ops   = Neo4jEpisodeNodeOperations()
+            self._community_node_ops = Neo4jCommunityNodeOperations()
+            self._saga_node_ops      = Neo4jSagaNodeOperations()
+            self._entity_edge_ops    = Neo4jEntityEdgeOperations()
+            self._episodic_edge_ops  = Neo4jEpisodicEdgeOperations()
+            self._community_edge_ops = Neo4jCommunityEdgeOperations()
+            self._has_episode_edge_ops  = Neo4jHasEpisodeEdgeOperations()
+            self._next_episode_edge_ops = Neo4jNextEpisodeEdgeOperations()
+            self._search_ops         = Neo4jSearchOperations()
+            self._graph_ops          = Neo4jGraphMaintenanceOperations()
+            self.aoss_client         = None
+
+            # Schedule index/constraint creation (same as Neo4jDriver.__init__)
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.build_indices_and_constraints())
+            except RuntimeError:
+                pass
+
+    return _CertifiedDriver(uri, user, password)
 
 
 def _build_graphiti():
@@ -101,12 +168,13 @@ def _build_graphiti():
         )
         logger.info("KG LLM: OpenAI gpt-4o-mini")
 
+    graph_driver = _build_neo4j_driver(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+
     g = Graphiti(
-        uri=NEO4J_URI,
-        user=NEO4J_USER,
-        password=NEO4J_PASSWORD,
         llm_client=llm_client,
         embedder=embedder,
+        cross_encoder=_IdentityCrossEncoder(),
+        graph_driver=graph_driver,
     )
     return g
 
@@ -181,7 +249,7 @@ class KnowledgeGraph:
         try:
             # Graphiti doesn't have a bulk delete by group_id yet —
             # delete via raw Cypher on the Neo4j driver
-            async with self._graphiti.driver.session() as session:
+            async with self._graphiti.driver.client.session() as session:
                 await session.run(
                     "MATCH (e:Episodic {group_id: $gid}) DETACH DELETE e",
                     gid=doc_id,
