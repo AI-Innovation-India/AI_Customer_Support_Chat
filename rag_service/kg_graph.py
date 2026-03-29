@@ -89,10 +89,18 @@ def _build_neo4j_driver(uri: str, user: str, password: str):
             # Bypass Neo4jDriver.__init__ — call the ABC base instead
             GraphDriver.__init__(self)
 
+            # neo4j+s:// already implies TLS — driver won't accept ssl_context with it.
+            # Strip the "+s" suffix so we can inject our own SSL context (certifi CA bundle).
+            # This is required on Windows where Python's SSL store may not trust AuraDB's chain.
+            plain_uri = (
+                uri.replace("neo4j+s://", "neo4j://")
+                   .replace("bolt+s://", "bolt://")
+            )
             ssl_ctx = ssl.create_default_context(cafile=certifi.where())
             self.client = AsyncGraphDatabase.driver(
-                uri=uri,
+                uri=plain_uri,
                 auth=(user or "", password or ""),
+                encrypted=True,
                 ssl_context=ssl_ctx,
             )
             self._database = database
