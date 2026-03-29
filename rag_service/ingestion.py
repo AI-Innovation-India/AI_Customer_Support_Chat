@@ -1,6 +1,12 @@
 """
-Document ingestion pipeline.
-Parses any supported file type → plain text → chunks → embeddings → FAISS index.
+Document ingestion pipeline — Pinecone vector store.
+
+Pinecone handles BOTH storage AND embeddings via its built-in inference model
+(multilingual-e5-large). No OpenAI / Azure embedding key required.
+
+Flow:
+  File/URL → parse → plain text → chunks → Pinecone upsert (with inference)
+  Query    → Pinecone semantic search (with inference) → top-K chunks
 """
 
 import io
@@ -10,38 +16,32 @@ import uuid
 import time
 import logging
 from pathlib import Path
-from typing import Optional
 
-import numpy as np
-import faiss
 import requests
 from bs4 import BeautifulSoup
+from pinecone import Pinecone, ServerlessSpec
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-CHUNK_SIZE    = int(os.getenv("CHUNK_SIZE", 800))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150))
-EMBED_DIM     = 1536
+PINECONE_KEY   = os.getenv("PINECONE_API_KEY", "")
+INDEX_NAME     = os.getenv("PINECONE_INDEX_NAME", "trane-thermoking-kb")
+PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")
+PINECONE_REGION = os.getenv("PINECONE_REGION", "us-east-1")
 
-# ── Embedding client: Azure OpenAI (production) or OpenAI (dev/testing) ────────
-_USE_AZURE = os.getenv("USE_AZURE_EMBEDDINGS", "false").lower() == "true"
+# Pinecone's built-in embedding model — no external key needed
+# multilingual-e5-large: 1024-dim, supports English + many languages
+EMBED_MODEL    = "multilingual-e5-large"
+EMBED_DIM      = 1024
 
-if _USE_AZURE:
-    from openai import AzureOpenAI
-    _embed_client = AzureOpenAI(
-        azure_endpoint=os.getenv("AZURE_ENDPOINT", ""),
-        api_key=os.getenv("AZURE_KEY", ""),
-        api_version=os.getenv("AZURE_API_VERSION", "2024-02-01"),
-    )
-    EMBED_MODEL = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-small")
-    logger.info(f"Embeddings: Azure OpenAI — deployment '{EMBED_MODEL}'")
-else:
-    from openai import OpenAI
-    _embed_client = OpenAI()  # reads OPENAI_API_KEY from env
-    EMBED_MODEL = "text-embedding-3-small"
-    logger.info("Embeddings: OpenAI — text-embedding-3-small")
+CHUNK_SIZE     = int(os.getenv("CHUNK_SIZE", 800))
+CHUNK_OVERLAP  = int(os.getenv("CHUNK_OVERLAP", 150))
+
+# Local metadata store (Pinecone doesn't store arbitrary metadata well for listing)
+# We keep a small JSON file to track doc_id → filename, category, chunk count
+META_DIR       = Path(os.getenv("KB_STORAGE_PATH", "./knowledge_base"))
+
 
 # ── Text Extractors ─────────────────────────────────────────────────────────────
 
@@ -96,46 +96,57 @@ def extract_text_from_file(filename: str, content: bytes) -> str:
         return extract_excel(content)
     elif ext == ".csv":
         return extract_csv(content)
-    else:  # .txt, .md, .json, etc.
+    else:
         return extract_text(content)
 
 
-# ── Embedding ──────────────────────────────────────────────────────────────────
-
-def embed_texts(texts: list[str]) -> np.ndarray:
-    """Embed a batch of texts. Returns float32 array (N, EMBED_DIM)."""
-    response = _embed_client.embeddings.create(model=EMBED_MODEL, input=texts)
-    vecs = [r.embedding for r in response.data]
-    return np.array(vecs, dtype=np.float32)
-
-
-# ── FAISS Store ────────────────────────────────────────────────────────────────
+# ── Knowledge Base ─────────────────────────────────────────────────────────────
 
 class KnowledgeBase:
-    def __init__(self, storage_path: str):
-        self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(parents=True, exist_ok=True)
-        self.index_path    = self.storage_path / "faiss.index"
-        self.meta_path     = self.storage_path / "metadata.json"
-        self.splitter      = RecursiveCharacterTextSplitter(
+    def __init__(self, storage_path: str = "./knowledge_base"):
+        if not PINECONE_KEY:
+            raise RuntimeError("PINECONE_API_KEY is not set in .env")
+
+        self.meta_dir  = Path(storage_path)
+        self.meta_dir.mkdir(parents=True, exist_ok=True)
+        self.meta_path = self.meta_dir / "metadata.json"
+        self.splitter  = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
-        self._load()
 
-    def _load(self):
-        if self.index_path.exists():
-            self.index = faiss.read_index(str(self.index_path))
-        else:
-            self.index = faiss.IndexFlatL2(EMBED_DIM)
+        # Connect to Pinecone
+        self.pc = Pinecone(api_key=PINECONE_KEY)
+        self._ensure_index()
+        self._load_meta()
 
+    def _ensure_index(self):
+        """Create the Pinecone index if it doesn't exist yet."""
+        existing = [idx.name for idx in self.pc.list_indexes()]
+        if INDEX_NAME not in existing:
+            logger.info(f"Creating Pinecone index '{INDEX_NAME}' …")
+            self.pc.create_index_for_model(
+                name=INDEX_NAME,
+                cloud=PINECONE_CLOUD,
+                region=PINECONE_REGION,
+                embed={
+                    "model":       EMBED_MODEL,
+                    "field_map":   {"text": "chunk_text"},   # field to embed
+                },
+            )
+            # Wait until ready
+            while not self.pc.describe_index(INDEX_NAME).status.ready:
+                time.sleep(1)
+            logger.info(f"Index '{INDEX_NAME}' ready")
+        self.index = self.pc.Index(INDEX_NAME)
+
+    def _load_meta(self):
         if self.meta_path.exists():
             with open(self.meta_path) as f:
-                self.metadata: list[dict] = json.load(f)
+                self.metadata: dict = json.load(f)  # {doc_id: {filename, category, chunks, ingested_at}}
         else:
-            self.metadata: list[dict] = []
+            self.metadata: dict = {}
 
-    def _save(self):
-        faiss.write_index(self.index, str(self.index_path))
+    def _save_meta(self):
         with open(self.meta_path, "w") as f:
             json.dump(self.metadata, f, indent=2)
 
@@ -151,90 +162,91 @@ class KnowledgeBase:
         if not chunks:
             raise ValueError("Document produced no chunks after splitting")
 
-        vectors = embed_texts(chunks)
-        # Normalize for cosine similarity via L2 on normalised vectors
-        faiss.normalize_L2(vectors)
-        self.index.add(vectors)
-
-        first_idx = len(self.metadata)
+        # Pinecone upsert format for inference-enabled index:
+        # Each record has an _id and the text field that gets embedded
+        records = []
         for i, chunk in enumerate(chunks):
-            self.metadata.append({
+            records.append({
+                "_id":        f"{doc_id}#{i}",
+                "chunk_text": chunk,           # this field is embedded by Pinecone
                 "doc_id":     doc_id,
-                "chunk_idx":  i,
-                "faiss_idx":  first_idx + i,
                 "filename":   filename,
                 "category":   category,
-                "text":       chunk,
-                "ingested_at": int(time.time()),
+                "chunk_idx":  i,
             })
 
-        self._save()
-        logger.info(f"Ingested {filename} → {len(chunks)} chunks (doc_id={doc_id})")
+        # Upsert in batches of 96 (Pinecone limit for inference upserts)
+        batch_size = 96
+        for start in range(0, len(records), batch_size):
+            self.index.upsert_records(
+                namespace="kb",
+                records=records[start : start + batch_size],
+            )
+
+        # Store doc metadata locally for listing/deletion
+        self.metadata[doc_id] = {
+            "doc_id":      doc_id,
+            "filename":    filename,
+            "category":    category,
+            "chunks":      len(chunks),
+            "ingested_at": int(time.time()),
+            "chunk_ids":   [f"{doc_id}#{i}" for i in range(len(chunks))],
+        }
+        self._save_meta()
+
+        logger.info(f"Ingested '{filename}' → {len(chunks)} chunks (doc_id={doc_id})")
         return {"doc_id": doc_id, "filename": filename, "chunks": len(chunks)}
 
     def ingest_url(self, url: str, category: str = "general") -> dict:
         raw_text = extract_url(url)
-        # Treat the URL as the "filename"
         return self.ingest_file(url, raw_text.encode(), category)
 
     # ── Query ─────────────────────────────────────────────────────────────────
 
     def query(self, question: str, top_k: int = 5) -> list[dict]:
-        if self.index.ntotal == 0:
-            return []
-        vec = embed_texts([question])
-        faiss.normalize_L2(vec)
-        distances, indices = self.index.search(vec, min(top_k, self.index.ntotal))
-        results = []
-        for dist, idx in zip(distances[0], indices[0]):
-            if idx < 0 or idx >= len(self.metadata):
-                continue
-            meta = self.metadata[idx]
-            results.append({
-                "text":     meta["text"],
-                "filename": meta["filename"],
-                "category": meta["category"],
-                "score":    float(1 - dist / 2),  # cosine similarity approx
-                "doc_id":   meta["doc_id"],
-            })
-        return results
+        """Semantic search using Pinecone inference — no embedding key needed."""
+        results = self.index.search(
+            namespace="kb",
+            query={"inputs": {"text": question}, "top_k": top_k},
+            fields=["chunk_text", "filename", "category", "doc_id"],
+        )
 
-    # ── List & Delete ─────────────────────────────────────────────────────────
+        hits = []
+        for match in results.get("result", {}).get("hits", []):
+            fields = match.get("fields", {})
+            hits.append({
+                "text":     fields.get("chunk_text", ""),
+                "filename": fields.get("filename", ""),
+                "category": fields.get("category", ""),
+                "doc_id":   fields.get("doc_id", ""),
+                "score":    match.get("_score", 0.0),
+            })
+        return hits
+
+    # ── List ─────────────────────────────────────────────────────────────────
 
     def list_documents(self) -> list[dict]:
-        seen: dict[str, dict] = {}
-        for m in self.metadata:
-            if m["doc_id"] not in seen:
-                seen[m["doc_id"]] = {
-                    "doc_id":      m["doc_id"],
-                    "filename":    m["filename"],
-                    "category":    m["category"],
-                    "chunks":      0,
-                    "ingested_at": m["ingested_at"],
-                }
-            seen[m["doc_id"]]["chunks"] += 1
-        return list(seen.values())
+        return list(self.metadata.values())
+
+    # ── Delete ────────────────────────────────────────────────────────────────
 
     def delete_document(self, doc_id: str) -> bool:
-        """Remove all chunks of a document and rebuild the FAISS index."""
-        keep = [m for m in self.metadata if m["doc_id"] != doc_id]
-        if len(keep) == len(self.metadata):
-            return False  # doc not found
-
-        if not keep:
-            self.index = faiss.IndexFlatL2(EMBED_DIM)
-            self.metadata = []
-        else:
-            # Re-embed all remaining chunks and rebuild index from scratch
-            texts   = [m["text"] for m in keep]
-            vectors = embed_texts(texts)
-            faiss.normalize_L2(vectors)
-            self.index = faiss.IndexFlatL2(EMBED_DIM)
-            self.index.add(vectors)
-            for i, m in enumerate(keep):
-                m["faiss_idx"] = i
-            self.metadata = keep
-
-        self._save()
-        logger.info(f"Deleted doc {doc_id}, {len(self.metadata)} chunks remain")
+        if doc_id not in self.metadata:
+            return False
+        chunk_ids = self.metadata[doc_id].get("chunk_ids", [])
+        if chunk_ids:
+            # Pinecone delete by vector IDs
+            self.index.delete(ids=chunk_ids, namespace="kb")
+        del self.metadata[doc_id]
+        self._save_meta()
+        logger.info(f"Deleted doc {doc_id} ({len(chunk_ids)} chunks removed)")
         return True
+
+    @property
+    def index_total(self) -> int:
+        """Approximate vector count from Pinecone stats."""
+        try:
+            stats = self.index.describe_index_stats()
+            return stats.get("total_vector_count", 0)
+        except Exception:
+            return 0

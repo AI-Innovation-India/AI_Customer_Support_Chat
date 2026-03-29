@@ -64,10 +64,11 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {
-        "status": "ok",
-        "vectors": kb.index.ntotal if kb else 0,
-        "documents": len(kb.list_documents()) if kb else 0,
+        "status":     "ok",
+        "vectors":    kb.index_total if kb else 0,
+        "documents":  len(kb.list_documents()) if kb else 0,
         "web_search": ENABLE_WEB_SEARCH,
+        "vector_db":  "pinecone",
     }
 
 

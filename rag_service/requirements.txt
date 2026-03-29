@@ -3,15 +3,11 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 python-dotenv==1.0.1
 
-# Embeddings — Azure OpenAI (production) or OpenAI (dev)
-openai==1.51.0
+# Vector DB — Pinecone (handles storage + embeddings in one)
+pinecone==5.4.2
 
 # Web search fallback (Tavily — optional, set TAVILY_API_KEY to enable)
 httpx==0.27.2
-
-# Vector store
-faiss-cpu==1.9.0
-numpy==1.26.4
 
 # Document parsers
 PyMuPDF==1.24.11        # PDF
@@ -23,7 +19,3 @@ requests==2.32.3        # URL fetch
 
 # LangChain for chunking only
 langchain-text-splitters==0.3.0
-
-# Knowledge Graph RAG (optional — comment out if no Neo4j)
-# graphiti-core==0.3.6
-# neo4j==5.27.0
