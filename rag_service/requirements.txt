@@ -3,10 +3,13 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 python-dotenv==1.0.1
 
-# Embeddings — Azure OpenAI text-embedding-3-small
+# Embeddings:
+#   Option A (auto-detected): Azure OpenAI text-embedding-3-small
+#   Option B (fallback):      Pinecone built-in multilingual-e5-large
+# openai package needed for Option A — harmless to install even if not used
 openai==1.51.0
 
-# Vector DB — Pinecone (stores + searches vectors)
+# Vector DB — Pinecone
 pinecone==5.4.2
 
 # Web search fallback (Tavily — optional, set TAVILY_API_KEY to enable)

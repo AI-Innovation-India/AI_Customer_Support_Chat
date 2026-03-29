@@ -1,14 +1,19 @@
 """
-Document ingestion pipeline — Azure OpenAI embeddings + Pinecone vector store.
+Document ingestion pipeline — auto-selects embedding strategy:
 
-Embedding model : text-embedding-3-small (via Azure OpenAI — same key as chat)
-Vector store    : Pinecone serverless (standard index, 1536-dim)
+  Priority 1: Azure OpenAI text-embedding-3-small
+              (if AZURE_ENDPOINT + AZURE_KEY + AZURE_EMBED_DEPLOYMENT are set
+               AND the deployment actually responds)
 
-Flow:
-  File/URL → parse → plain text → chunks
-           → Azure OpenAI embeds each chunk
-           → Pinecone stores vectors + metadata
-  Query    → Azure OpenAI embeds query → Pinecone similarity search → top-K
+  Priority 2: Pinecone built-in multilingual-e5-large
+              (no external key needed — Pinecone does the embedding)
+              Used automatically if Azure is not configured or fails.
+
+Two separate Pinecone index types are used:
+  - Azure path  → standard cosine index (dim=1536, you supply vectors)
+  - Pinecone path → inference index (Pinecone supplies vectors)
+
+On startup the service logs which mode it chose.
 """
 
 import io
@@ -21,7 +26,6 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
-from openai import AzureOpenAI
 from pinecone import Pinecone, ServerlessSpec
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -33,28 +37,55 @@ INDEX_NAME      = os.getenv("PINECONE_INDEX_NAME", "trane-thermoking-kb")
 PINECONE_CLOUD  = os.getenv("PINECONE_CLOUD", "aws")
 PINECONE_REGION = os.getenv("PINECONE_REGION", "us-east-1")
 
-# Azure OpenAI — text-embedding-3-small (1536 dimensions)
 AZURE_ENDPOINT    = os.getenv("AZURE_ENDPOINT", "")
 AZURE_KEY         = os.getenv("AZURE_KEY", "")
 AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-02-01")
 EMBED_DEPLOYMENT  = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-small")
-EMBED_DIM         = 1536
 
 CHUNK_SIZE    = int(os.getenv("CHUNK_SIZE", 800))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150))
-BATCH_SIZE    = 100   # vectors per Pinecone upsert call
+BATCH_SIZE    = 96
 
-if not AZURE_ENDPOINT or not AZURE_KEY:
-    raise RuntimeError("AZURE_ENDPOINT and AZURE_KEY must be set in rag_service/.env")
 if not PINECONE_KEY:
     raise RuntimeError("PINECONE_API_KEY must be set in rag_service/.env")
 
-# ── Clients ─────────────────────────────────────────────────────────────────────
-_embed_client = AzureOpenAI(
-    azure_endpoint=AZURE_ENDPOINT,
-    api_key=AZURE_KEY,
-    api_version=AZURE_API_VERSION,
-)
+
+# ── Detect embedding mode at startup ───────────────────────────────────────────
+
+def _try_azure_embeddings() -> bool:
+    """Return True if Azure embedding deployment is reachable and works."""
+    if not AZURE_ENDPOINT or not AZURE_KEY:
+        return False
+    try:
+        from openai import AzureOpenAI
+        client = AzureOpenAI(
+            azure_endpoint=AZURE_ENDPOINT,
+            api_key=AZURE_KEY,
+            api_version=AZURE_API_VERSION,
+        )
+        # Quick test with a short string — if it throws, Azure isn't available
+        client.embeddings.create(model=EMBED_DEPLOYMENT, input=["test"])
+        return True
+    except Exception as e:
+        logger.warning(f"Azure embeddings not available ({e}) — will use Pinecone built-in")
+        return False
+
+
+USE_AZURE_EMBED = _try_azure_embeddings()
+
+if USE_AZURE_EMBED:
+    from openai import AzureOpenAI as _AzureOpenAI
+    _azure_client = _AzureOpenAI(
+        azure_endpoint=AZURE_ENDPOINT,
+        api_key=AZURE_KEY,
+        api_version=AZURE_API_VERSION,
+    )
+    EMBED_DIM = 1536
+    logger.info(f"Embedding mode: Azure OpenAI — {EMBED_DEPLOYMENT} (dim={EMBED_DIM})")
+else:
+    _azure_client = None
+    EMBED_DIM = None   # Pinecone inference index — dim is managed by Pinecone
+    logger.info("Embedding mode: Pinecone built-in — multilingual-e5-large")
 
 
 # ── Text Extractors ─────────────────────────────────────────────────────────────
@@ -114,14 +145,10 @@ def extract_text_from_file(filename: str, content: bytes) -> str:
         return extract_text(content)
 
 
-# ── Embeddings ──────────────────────────────────────────────────────────────────
+# ── Embedding helper (Azure path only) ─────────────────────────────────────────
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Embed a batch via Azure OpenAI text-embedding-3-small."""
-    response = _embed_client.embeddings.create(
-        model=EMBED_DEPLOYMENT,
-        input=texts,
-    )
+def _azure_embed(texts: list[str]) -> list[list[float]]:
+    response = _azure_client.embeddings.create(model=EMBED_DEPLOYMENT, input=texts)
     return [r.embedding for r in response.data]
 
 
@@ -139,20 +166,41 @@ class KnowledgeBase:
         self._ensure_index()
         self._load_meta()
 
+    # ── Index creation (differs by embedding mode) ────────────────────────────
+
     def _ensure_index(self):
         existing = [idx.name for idx in self.pc.list_indexes()]
+
         if INDEX_NAME not in existing:
-            logger.info(f"Creating Pinecone index '{INDEX_NAME}' (dim={EMBED_DIM}) …")
-            self.pc.create_index(
-                name=INDEX_NAME,
-                dimension=EMBED_DIM,
-                metric="cosine",
-                spec=ServerlessSpec(cloud=PINECONE_CLOUD, region=PINECONE_REGION),
-            )
+            if USE_AZURE_EMBED:
+                # Standard index — we supply pre-computed 1536-dim vectors
+                logger.info(f"Creating standard Pinecone index '{INDEX_NAME}' (dim=1536) …")
+                self.pc.create_index(
+                    name=INDEX_NAME,
+                    dimension=1536,
+                    metric="cosine",
+                    spec=ServerlessSpec(cloud=PINECONE_CLOUD, region=PINECONE_REGION),
+                )
+            else:
+                # Inference index — Pinecone embeds using multilingual-e5-large
+                logger.info(f"Creating Pinecone inference index '{INDEX_NAME}' …")
+                self.pc.create_index_for_model(
+                    name=INDEX_NAME,
+                    cloud=PINECONE_CLOUD,
+                    region=PINECONE_REGION,
+                    embed={
+                        "model":     "multilingual-e5-large",
+                        "field_map": {"text": "chunk_text"},
+                    },
+                )
+
             while not self.pc.describe_index(INDEX_NAME).status.ready:
                 time.sleep(1)
             logger.info(f"Index '{INDEX_NAME}' ready")
+
         self.index = self.pc.Index(INDEX_NAME)
+
+    # ── Metadata ──────────────────────────────────────────────────────────────
 
     def _load_meta(self):
         if self.meta_path.exists():
@@ -179,30 +227,10 @@ class KnowledgeBase:
 
         chunk_ids = [f"{doc_id}#{i}" for i in range(len(chunks))]
 
-        # Embed in batches (Azure has per-request token limits)
-        all_vectors = []
-        for i in range(0, len(chunks), BATCH_SIZE):
-            batch_texts = chunks[i : i + BATCH_SIZE]
-            batch_vecs  = embed_texts(batch_texts)
-            for j, (vec, text) in enumerate(zip(batch_vecs, batch_texts)):
-                idx = i + j
-                all_vectors.append({
-                    "id":     chunk_ids[idx],
-                    "values": vec,
-                    "metadata": {
-                        "doc_id":   doc_id,
-                        "filename": filename,
-                        "category": category,
-                        "text":     text,         # stored so we can retrieve it
-                    },
-                })
-
-        # Upsert to Pinecone in batches
-        for i in range(0, len(all_vectors), BATCH_SIZE):
-            self.index.upsert(
-                vectors=all_vectors[i : i + BATCH_SIZE],
-                namespace="kb",
-            )
+        if USE_AZURE_EMBED:
+            self._upsert_azure(doc_id, filename, category, chunks, chunk_ids)
+        else:
+            self._upsert_pinecone_inference(doc_id, filename, category, chunks, chunk_ids)
 
         self.metadata[doc_id] = {
             "doc_id":      doc_id,
@@ -211,11 +239,48 @@ class KnowledgeBase:
             "chunks":      len(chunks),
             "ingested_at": int(time.time()),
             "chunk_ids":   chunk_ids,
+            "embed_mode":  "azure" if USE_AZURE_EMBED else "pinecone",
         }
         self._save_meta()
-
         logger.info(f"Ingested '{filename}' → {len(chunks)} chunks (doc_id={doc_id})")
         return {"doc_id": doc_id, "filename": filename, "chunks": len(chunks)}
+
+    def _upsert_azure(self, doc_id, filename, category, chunks, chunk_ids):
+        """Pre-compute embeddings via Azure then upsert vectors to Pinecone."""
+        all_vectors = []
+        for i in range(0, len(chunks), BATCH_SIZE):
+            batch     = chunks[i : i + BATCH_SIZE]
+            embeddings = _azure_embed(batch)
+            for j, (vec, text) in enumerate(zip(embeddings, batch)):
+                all_vectors.append({
+                    "id":     chunk_ids[i + j],
+                    "values": vec,
+                    "metadata": {
+                        "doc_id":   doc_id,
+                        "filename": filename,
+                        "category": category,
+                        "text":     text,
+                    },
+                })
+        for i in range(0, len(all_vectors), BATCH_SIZE):
+            self.index.upsert(vectors=all_vectors[i : i + BATCH_SIZE], namespace="kb")
+
+    def _upsert_pinecone_inference(self, doc_id, filename, category, chunks, chunk_ids):
+        """Send raw text; Pinecone embeds using multilingual-e5-large."""
+        records = []
+        for i, chunk in enumerate(chunks):
+            records.append({
+                "_id":        chunk_ids[i],
+                "chunk_text": chunk,        # Pinecone embeds this field
+                "doc_id":     doc_id,
+                "filename":   filename,
+                "category":   category,
+            })
+        for i in range(0, len(records), BATCH_SIZE):
+            self.index.upsert_records(
+                namespace="kb",
+                records=records[i : i + BATCH_SIZE],
+            )
 
     def ingest_url(self, url: str, category: str = "general") -> dict:
         raw_text = extract_url(url)
@@ -224,13 +289,15 @@ class KnowledgeBase:
     # ── Query ─────────────────────────────────────────────────────────────────
 
     def query(self, question: str, top_k: int = 5) -> list[dict]:
-        """Embed question via Azure OpenAI → cosine search in Pinecone."""
-        vec = embed_texts([question])[0]
+        if USE_AZURE_EMBED:
+            return self._query_azure(question, top_k)
+        else:
+            return self._query_pinecone_inference(question, top_k)
+
+    def _query_azure(self, question: str, top_k: int) -> list[dict]:
+        vec = _azure_embed([question])[0]
         results = self.index.query(
-            vector=vec,
-            top_k=top_k,
-            namespace="kb",
-            include_metadata=True,
+            vector=vec, top_k=top_k, namespace="kb", include_metadata=True
         )
         hits = []
         for match in results.get("matches", []):
@@ -241,6 +308,24 @@ class KnowledgeBase:
                 "category": meta.get("category", ""),
                 "doc_id":   meta.get("doc_id", ""),
                 "score":    match.get("score", 0.0),
+            })
+        return hits
+
+    def _query_pinecone_inference(self, question: str, top_k: int) -> list[dict]:
+        results = self.index.search(
+            namespace="kb",
+            query={"inputs": {"text": question}, "top_k": top_k},
+            fields=["chunk_text", "filename", "category", "doc_id"],
+        )
+        hits = []
+        for match in results.get("result", {}).get("hits", []):
+            fields = match.get("fields", {})
+            hits.append({
+                "text":     fields.get("chunk_text", ""),
+                "filename": fields.get("filename", ""),
+                "category": fields.get("category", ""),
+                "doc_id":   fields.get("doc_id", ""),
+                "score":    match.get("_score", 0.0),
             })
         return hits
 

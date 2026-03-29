@@ -63,12 +63,14 @@ app.add_middleware(
 # ── Health ──────────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
+    from ingestion import USE_AZURE_EMBED
     return {
-        "status":     "ok",
-        "vectors":    kb.index_total if kb else 0,
-        "documents":  len(kb.list_documents()) if kb else 0,
-        "web_search": ENABLE_WEB_SEARCH,
-        "vector_db":  "pinecone",
+        "status":       "ok",
+        "vectors":      kb.index_total if kb else 0,
+        "documents":    len(kb.list_documents()) if kb else 0,
+        "web_search":   ENABLE_WEB_SEARCH,
+        "vector_db":    "pinecone",
+        "embed_mode":   "azure/text-embedding-3-small" if USE_AZURE_EMBED else "pinecone/multilingual-e5-large",
     }
 
 
