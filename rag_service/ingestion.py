@@ -318,15 +318,34 @@ class KnowledgeBase:
             fields=["chunk_text", "filename", "category", "doc_id"],
         )
         hits = []
-        for match in results.get("result", {}).get("hits", []):
-            fields = match.get("fields", {})
-            hits.append({
-                "text":     fields.get("chunk_text", ""),
-                "filename": fields.get("filename", ""),
-                "category": fields.get("category", ""),
-                "doc_id":   fields.get("doc_id", ""),
-                "score":    match.get("_score", 0.0),
-            })
+        # Pinecone v8 returns objects; use getattr with fallback for safety
+        raw_hits = []
+        try:
+            raw_hits = results.result.hits
+        except AttributeError:
+            # Fallback: dict-style response
+            raw_hits = results.get("result", {}).get("hits", [])
+
+        for match in raw_hits:
+            try:
+                fields = match.fields
+                hits.append({
+                    "text":     getattr(fields, "chunk_text", "") or "",
+                    "filename": getattr(fields, "filename", "") or "",
+                    "category": getattr(fields, "category", "") or "",
+                    "doc_id":   getattr(fields, "doc_id", "") or "",
+                    "score":    getattr(match, "_score", 0.0) or 0.0,
+                })
+            except AttributeError:
+                # Fallback: dict-style match
+                f = match.get("fields", {})
+                hits.append({
+                    "text":     f.get("chunk_text", ""),
+                    "filename": f.get("filename", ""),
+                    "category": f.get("category", ""),
+                    "doc_id":   f.get("doc_id", ""),
+                    "score":    match.get("_score", 0.0),
+                })
         return hits
 
     # ── List & Delete ─────────────────────────────────────────────────────────
@@ -339,6 +358,7 @@ class KnowledgeBase:
             return False
         chunk_ids = self.metadata[doc_id].get("chunk_ids", [])
         if chunk_ids:
+            # Pinecone v8: delete accepts ids list; namespace as kwarg
             self.index.delete(ids=chunk_ids, namespace="kb")
         del self.metadata[doc_id]
         self._save_meta()
@@ -349,7 +369,12 @@ class KnowledgeBase:
     def index_total(self) -> int:
         try:
             stats = self.index.describe_index_stats()
-            ns = stats.get("namespaces", {}).get("kb", {})
-            return ns.get("vector_count", 0)
+            # Pinecone v8 returns an object; try attribute access first
+            try:
+                ns = stats.namespaces.get("kb", None)
+                return ns.vector_count if ns else 0
+            except AttributeError:
+                ns = stats.get("namespaces", {}).get("kb", {})
+                return ns.get("vector_count", 0)
         except Exception:
             return 0

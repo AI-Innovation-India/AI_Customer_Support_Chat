@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Loading knowledge base from {KB_PATH} …")
     kb = KnowledgeBase(storage_path=KB_PATH)
     docs = kb.list_documents()
-    logger.info(f"KB ready — {kb.index.ntotal} vectors, {len(docs)} documents")
+    logger.info(f"KB ready — {kb.index_total} vectors, {len(docs)} documents")
     if ENABLE_WEB_SEARCH:
         logger.info("Web search fallback: ENABLED (Tavily)")
     else:
