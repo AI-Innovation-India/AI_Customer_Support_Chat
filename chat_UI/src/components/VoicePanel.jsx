@@ -303,9 +303,9 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
         {/* ── Messages area ── */}
         <div className="dynamic-content-area" style={{ padding: '12px 16px 4px' }}>
 
-          {/* Empty state */}
+          {/* Empty state — vertically centred */}
           {chatMessages.length === 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 32, gap: 12 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, width: '100%', paddingBottom: 24 }}>
               <div style={{
                 width: 56, height: 56, borderRadius: '50%',
                 background: 'linear-gradient(135deg, rgba(169,112,255,0.3), rgba(94,220,255,0.15))',
