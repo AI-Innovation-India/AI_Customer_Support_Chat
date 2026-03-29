@@ -314,7 +314,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
       case 'Idle':       return 'Tap 🎤 to speak';
       case 'Listening':  return 'Listening… tap 🎤 again to send';
       case 'Processing': return 'Processing your message…';
-      case 'Responding': return 'Yazhni is responding… tap 🎤 to interrupt';
+      case 'Responding': return 'Yazhi is responding… tap 🎤 to interrupt';
       default: return '';
     }
   };
@@ -329,20 +329,21 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
       <div className="voice-panel-container">
 
         {/* ── Chat header ── */}
-        <div className="voice-header" style={{ borderBottom: '1px solid rgba(169,112,255,0.15)', paddingBottom: 10 }}>
+        <div className="voice-header fade-in-up" style={{ marginBottom: 16 }}>
           <button className="icon-glass-button back-btn" onClick={() => setShowChat(false)} title="Back to Voice">
             <Mic size={17} color="#A970FF" />
           </button>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 className="header-title" style={{ fontSize: 14, marginBottom: 1 }}>Text Support</h2>
-            <span style={{ fontSize: 10, color: '#5EDCFF', letterSpacing: 0.8, opacity: 0.8 }}>YAZHNI · ONLINE</span>
+            <h2 className="header-title" style={{ fontSize: 16, marginBottom: 2 }}>Text Support</h2>
+            <span style={{ fontSize: 10, color: '#5EDCFF', letterSpacing: 1, opacity: 0.9, fontWeight: 600 }}>YAZHI · ONLINE</span>
           </div>
           <button
             onClick={() => { setShowChat(false); setShowSummary(true); }}
             style={{
-              fontSize: 11, fontWeight: 600, color: '#fca5a5',
-              background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)',
-              borderRadius: 20, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              fontSize: 11, fontWeight: 700, color: '#fca5a5',
+              background: 'rgba(227, 24, 55, 0.15)', border: '1px solid rgba(227, 24, 55, 0.4)',
+              borderRadius: 20, padding: '7px 14px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              transition: 'all 0.2s',
             }}
           >End Session</button>
         </div>
@@ -354,31 +355,35 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
 
           {/* Empty state — vertically centred, takes all available space */}
           {chatMessages.length === 0 && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, width: '100%', paddingBottom: 24 }}>
-              <div style={{
-                width: 56, height: 56, borderRadius: '50%',
-                background: 'linear-gradient(135deg, rgba(169,112,255,0.3), rgba(94,220,255,0.15))',
-                border: '2px solid rgba(169,112,255,0.4)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 0 20px rgba(169,112,255,0.2)',
-              }}>
-                <span style={{ fontSize: 22 }}>🤖</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 24 }}>
+              <div className="glass-panel fade-in-up delay-2" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '32px 24px', maxWidth: 380, width: '100%', background: 'rgba(255,255,255,0.03)' }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(169,112,255,0.2), rgba(94,220,255,0.1))',
+                  border: '1px solid rgba(169,112,255,0.4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 0 30px rgba(169,112,255,0.25)',
+                }}>
+                  <span style={{ fontSize: 26 }}>🤖</span>
+                </div>
+                <div style={{ textAlign: 'center', marginBottom: 6 }}>
+                  <h3 className="neon-text-primary" style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px 0' }}>Hi! I'm Yazhi</h3>
+                  <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, margin: 0, lineHeight: 1.4 }}>Ask me anything about Trane or ThermoKing</p>
+                </div>
+                {/* Quick prompts */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                  {['My AC is not cooling', 'ThermoKing fault code', 'Schedule a service'].map(q => (
+                    <button key={q} onClick={() => handleChatSend(q)}
+                      style={{
+                        background: 'rgba(169,112,255,0.08)', border: '1px solid rgba(169,112,255,0.2)',
+                        borderRadius: 12, padding: '10px 14px', color: 'rgba(255,255,255,0.85)',
+                        fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s', width: '100%', textAlign: 'center',
+                      }} onMouseOver={e => e.currentTarget.style.background = 'rgba(169,112,255,0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(169,112,255,0.08)'}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Hi! I'm Yazhni</p>
-                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Ask me anything about Trane or ThermoKing</p>
-              </div>
-              {/* Quick prompts */}
-              {['My AC is not cooling', 'ThermoKing fault code', 'Schedule a service'].map(q => (
-                <button key={q} onClick={() => handleChatSend(q)}
-                  style={{
-                    background: 'rgba(169,112,255,0.08)', border: '1px solid rgba(169,112,255,0.25)',
-                    borderRadius: 20, padding: '7px 14px', color: 'rgba(255,255,255,0.7)',
-                    fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
-                  }}>
-                  {q}
-                </button>
-              ))}
             </div>
           )}
 
@@ -442,39 +447,50 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           </div>
         )}
 
-        {/* ── Input bar ── */}
-        <div style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8,
-          padding: '10px 16px 18px',
-          borderTop: '1px solid rgba(169,112,255,0.1)',
+        {/* ── Input bar (Floating Container) ── */}
+        <div className="fade-in-up delay-3" style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
+          margin: '10px 16px 20px', padding: '8px',
+          background: 'rgba(255, 255, 255, 0.05)', backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 100,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.3)', width: 'calc(100% - 32px)', maxWidth: 600,
+          alignSelf: 'center',
         }}>
           {/* Switch to voice button */}
           <button onClick={() => setShowChat(false)} title="Switch to Voice"
-            style={{ width: 40, height: 40, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(169,112,255,0.1)', border: '1px solid rgba(169,112,255,0.25)', cursor: 'pointer' }}>
-            <Mic size={16} color="#A970FF" />
+            style={{ width: 44, height: 44, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(169,112,255,0.15)', border: '1px solid rgba(169,112,255,0.3)', cursor: 'pointer', transition: 'all 0.2s' }}
+            onMouseOver={e => { e.currentTarget.style.background='rgba(169,112,255,0.3)'; e.currentTarget.style.transform='scale(1.05)'; }}
+            onMouseOut={e => { e.currentTarget.style.background='rgba(169,112,255,0.15)'; e.currentTarget.style.transform='scale(1)'; }}
+          >
+            <Mic size={18} color="#A970FF" />
           </button>
+          
           <input
-            type="text" placeholder="Type your message…"
+            type="text" placeholder="Type your message to Yazhi…"
             value={chatInput}
             onChange={e => setChatInput(e.target.value)}
             onKeyDown={handleChatKey}
             autoFocus
             style={{
-              flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(169,112,255,0.25)', color: '#fff',
-              padding: '11px 18px', borderRadius: 100, outline: 'none',
-              fontFamily: 'inherit', fontSize: 13,
+              flex: 1, minWidth: 0, background: 'transparent',
+              border: 'none', color: '#fff',
+              padding: '10px 8px', outline: 'none',
+              fontFamily: 'inherit', fontSize: 14,
             }}
           />
+          
           <button onClick={handleChatSend} disabled={isChatTyping}
             style={{
-              width: 40, height: 40, flexShrink: 0, borderRadius: '50%',
+              width: 44, height: 44, flexShrink: 0, borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: chatInput.trim() ? 'linear-gradient(135deg,#7c3aed,#A970FF)' : 'rgba(169,112,255,0.1)',
-              border: '1px solid rgba(169,112,255,0.35)', cursor: 'pointer',
-              transition: 'background 0.2s',
+              background: chatInput.trim() ? 'linear-gradient(135deg,#7c3aed,#A970FF)' : 'rgba(255,255,255,0.06)',
+              border: chatInput.trim() ? 'none' : '1px solid rgba(255,255,255,0.1)',
+              cursor: isChatTyping ? 'not-allowed' : 'pointer',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: chatInput.trim() ? 'scale(1.05)' : 'scale(1)',
+              boxShadow: chatInput.trim() ? '0 4px 15px rgba(169,112,255,0.5)' : 'none',
             }}>
-            <Send size={15} color="#fff" />
+            <Send size={16} color={chatInput.trim() ? "#fff" : "rgba(255,255,255,0.3)"} style={{ marginLeft: chatInput.trim() ? 2 : 0, transition: 'all 0.2s' }} />
           </button>
         </div>
 
@@ -585,7 +601,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           <>
             {ariaGreeting && (
               <div className="aria-greeting-box glass-panel">
-                <span className="aria-label neon-text-primary">Yazhni</span>
+                <span className="aria-label neon-text-primary">Yazhi</span>
                 <p className="aria-greeting-text">{ariaGreeting}</p>
               </div>
             )}

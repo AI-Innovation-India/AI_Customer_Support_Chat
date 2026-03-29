@@ -9,7 +9,7 @@ const Transcript = ({ userSpeech, AIResponse }) => {
         <p className="speech-text">{userSpeech}</p>
       </div>
       <div className="transcript-ai">
-        <span className="label neon-text-primary">Yazhni</span>
+        <span className="label neon-text-primary">Yazhi</span>
         <p className="speech-text">{AIResponse}</p>
       </div>
     </div>

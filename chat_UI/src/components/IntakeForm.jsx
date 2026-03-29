@@ -62,7 +62,7 @@ const IntakeForm = ({ onSubmit, onBack }) => {
         </div>
 
         <h2 className="intake-title neon-text-primary">👋 Welcome</h2>
-        <p className="intake-subtitle">Share your details so Yazhni can assist you right away.</p>
+        <p className="intake-subtitle">Share your details so Yazhi can assist you right away.</p>
 
         {/* Name */}
         <div className="intake-field">
@@ -136,7 +136,7 @@ const IntakeForm = ({ onSubmit, onBack }) => {
           onClick={handleSubmit}
           disabled={loading}
         >
-          {loading ? 'Connecting…' : 'Start Chat with Yazhni →'}
+          {loading ? 'Connecting…' : 'Start Chat with Yazhi →'}
         </button>
 
         <p className="intake-note">

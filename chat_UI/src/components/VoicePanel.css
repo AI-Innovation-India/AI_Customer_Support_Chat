@@ -4,7 +4,7 @@
   align-items: center;
   height: 100%;
   width: 100%;
-  padding: 12px 0 0;
+  padding: 8px 0 0;
   position: relative;
   overflow: hidden; /* never scroll the outer shell — mic always stays visible */
 }
@@ -178,7 +178,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 40px 16px;
+  padding: 4px 40px 10px;
   flex-shrink: 0; /* never compress — always visible */
 }
 
@@ -205,8 +205,8 @@
   justify-content: center;
   align-items: center;
   position: relative;
-  width: 150px;
-  height: 150px;
+  width: 130px;
+  height: 130px;
 }
 
 .mic-rings {
@@ -288,7 +288,7 @@
   border-radius: inherit;
 }
 
-/* ── Yazhni greeting box ── */
+/* ── Yazhi greeting box ── */
 .aria-greeting-box {
   width: 100%;
   padding: 10px 14px;
@@ -312,6 +312,7 @@
   color: rgba(255,255,255,0.88);
   display: -webkit-box;
   -webkit-line-clamp: 3;       /* cap at 3 lines — keeps height predictable */
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

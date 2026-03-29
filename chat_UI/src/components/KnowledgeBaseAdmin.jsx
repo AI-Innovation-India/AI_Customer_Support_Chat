@@ -7,12 +7,14 @@ const fmt = (ts) => new Date(ts * 1000).toLocaleDateString('en-IN', { day: '2-di
 
 export default function KnowledgeBaseAdmin({ authToken, onClose }) {
   const [docs,       setDocs]       = useState([]);
-  const [health,     setHealth]     = useState(null);   // null | {status,vectors,documents}
+  const [health,     setHealth]     = useState(null);
   const [loading,    setLoading]    = useState(false);
   const [uploading,  setUploading]  = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null); // "2 / 5 files"
   const [urlInput,   setUrlInput]   = useState('');
   const [category,   setCategory]   = useState('general');
-  const [toast,      setToast]      = useState(null);   // {type:'ok'|'err', msg}
+  const [toast,      setToast]      = useState(null);
+  const [deleting,   setDeleting]   = useState(null);  // doc_id being deleted
   const fileRef = useRef();
 
   const headers = { Authorization: `Bearer ${authToken}` };
@@ -42,20 +44,31 @@ export default function KnowledgeBaseAdmin({ authToken, onClose }) {
   useEffect(() => { fetchHealth(); fetchDocs(); }, []); // eslint-disable-line
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     e.target.value = '';
     setUploading(true);
-    const form = new FormData();
-    form.append('file', file);
-    form.append('category', category);
-    try {
-      const r = await fetch('/api/kb/ingest', { method: 'POST', headers, body: form });
-      const d = await r.json();
-      if (r.ok) { showToast('ok', `"${file.name}" indexed — ${d.chunks} chunks`); fetchDocs(); fetchHealth(); }
-      else showToast('err', d.error || 'Upload failed');
-    } catch { showToast('err', 'Upload failed'); }
+    let succeeded = 0, failed = 0;
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress(`Uploading ${i + 1} of ${files.length}: ${files[i].name}`);
+      const form = new FormData();
+      form.append('file', files[i]);
+      form.append('category', category);
+      try {
+        const r = await fetch('/api/kb/ingest', { method: 'POST', headers, body: form });
+        const d = await r.json();
+        if (r.ok) succeeded++;
+        else { failed++; showToast('err', `"${files[i].name}": ${d.error || 'failed'}`); }
+      } catch { failed++; }
+    }
+    setUploadProgress(null);
     setUploading(false);
+    if (succeeded > 0) {
+      showToast('ok', files.length === 1
+        ? `"${files[0].name}" indexed successfully`
+        : `${succeeded} of ${files.length} files indexed`);
+      fetchDocs(); fetchHealth();
+    }
   };
 
   const handleUrlIngest = async () => {
@@ -74,12 +87,14 @@ export default function KnowledgeBaseAdmin({ authToken, onClose }) {
   };
 
   const handleDelete = async (doc_id, filename) => {
-    if (!window.confirm(`Remove "${filename}" from the knowledge base?`)) return;
+    if (!window.confirm(`Remove "${filename}" from the knowledge base?\n\nThis cannot be undone.`)) return;
+    setDeleting(doc_id);
     try {
       const r = await fetch(`/api/kb/documents/${doc_id}`, { method: 'DELETE', headers });
-      if (r.ok) { showToast('ok', `"${filename}" removed`); fetchDocs(); fetchHealth(); }
-      else showToast('err', 'Delete failed');
+      if (r.ok) { showToast('ok', `"${filename}" removed from knowledge base`); fetchDocs(); fetchHealth(); }
+      else showToast('err', 'Delete failed — try again');
     } catch { showToast('err', 'Delete failed'); }
+    setDeleting(null);
   };
 
   // ── Styles ──────────────────────────────────────────────────────────────────
@@ -136,19 +151,23 @@ export default function KnowledgeBaseAdmin({ authToken, onClose }) {
 
           {/* File upload */}
           <div style={S.card}>
-            <span style={S.label}>Upload Document</span>
+            <span style={S.label}>Upload Documents</span>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>
-              Supports PDF, Excel (.xlsx), Word (.docx), plain text (.txt), CSV
+              PDF · Excel (.xlsx) · Word (.docx) · Text (.txt) · CSV — select multiple files at once
             </p>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <input ref={fileRef} type="file" style={{ display: 'none' }}
                 accept=".pdf,.xlsx,.xls,.docx,.doc,.txt,.csv,.md"
+                multiple
                 onChange={handleFileUpload} />
-              <button style={{ ...S.btn, ...S.btnPurple, opacity: uploading ? 0.6 : 1 }}
+              <button style={{ ...S.btn, ...S.btnPurple, opacity: uploading ? 0.6 : 1, width: 'fit-content' }}
                 disabled={uploading} onClick={() => fileRef.current?.click()}>
                 <Upload size={15} />
-                {uploading ? 'Uploading…' : 'Choose File'}
+                {uploading ? 'Uploading…' : 'Choose Files (multiple allowed)'}
               </button>
+              {uploadProgress && (
+                <p style={{ fontSize: 12, color: '#5EDCFF', margin: 0 }}>⏳ {uploadProgress}</p>
+              )}
             </div>
           </div>
 
@@ -189,8 +208,12 @@ export default function KnowledgeBaseAdmin({ authToken, onClose }) {
                       {doc.chunks} chunks · {doc.category} · {fmt(doc.ingested_at)}
                     </p>
                   </div>
-                  <button style={S.btnRed} onClick={() => handleDelete(doc.doc_id, doc.filename)} title="Remove">
-                    <Trash2 size={14} />
+                  <button
+                    style={{ ...S.btnRed, opacity: deleting === doc.doc_id ? 0.5 : 1 }}
+                    disabled={deleting === doc.doc_id}
+                    onClick={() => handleDelete(doc.doc_id, doc.filename)}
+                    title="Remove from knowledge base">
+                    {deleting === doc.doc_id ? '…' : <Trash2 size={14} />}
                   </button>
                 </div>
               ))}

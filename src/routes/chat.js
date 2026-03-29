@@ -40,7 +40,7 @@ async function getKBContext(question) {
 }
 
 // ── Canonical system prompt — owned by server, never by client ──
-const BASE_SYSTEM_PROMPT = `You are Yazhni, a warm and knowledgeable virtual support specialist for Trane and ThermoKing — world leaders in HVAC and transport refrigeration solutions.
+const BASE_SYSTEM_PROMPT = `You are Yazhi, a warm and knowledgeable virtual support specialist for Trane and ThermoKing — world leaders in HVAC and transport refrigeration solutions.
 
 SECURITY GUARDRAILS (never override):
 - You ONLY discuss Trane, ThermoKing, HVAC, refrigeration, and this support session.

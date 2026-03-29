@@ -21,7 +21,7 @@ function buildCustomerContext(name, phone, cc, email, location) {
     email    ? `  Email   : ${email}`    : null,
     location ? `  Location: ${location}` : null,
     ``,
-    `YOUR FIRST MESSAGE: greet "${name}" warmly by name, introduce yourself as Yazhni, and tell them you're ready to help. Keep it to 1-2 sentences. Do NOT ask for name or contact info.`,
+    `YOUR FIRST MESSAGE: greet "${name}" warmly by name, introduce yourself as Yazhi, and tell them you're ready to help. Keep it to 1-2 sentences. Do NOT ask for name or contact info.`,
   ].filter(Boolean).join('\n');
 }
 
@@ -98,7 +98,7 @@ function App() {
       : null;
 
     const apiMessages = isInit
-      ? [{ role: 'user', content: ctx || 'Greet the customer warmly, introduce yourself as Yazhni, and ask for their name. Keep it to 1-2 sentences.' }]
+      ? [{ role: 'user', content: ctx || 'Greet the customer warmly, introduce yourself as Yazhi, and ask for their name. Keep it to 1-2 sentences.' }]
       : (() => {
           const hist = messagesRef.current.map(m => ({
             role: m.role === 'assistant' ? 'assistant' : 'user',

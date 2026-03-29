@@ -1,10 +1,10 @@
 .options-panel-container {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 14px;
+  padding: 12px;
   border-radius: 18px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 2px;
 }
 
 .options-title {
@@ -27,7 +27,7 @@
   background: rgba(169, 112, 255, 0.1);
   border: 1px solid rgba(169, 112, 255, 0.2);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: row;
   align-items: center;
