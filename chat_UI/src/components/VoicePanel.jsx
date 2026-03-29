@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './VoicePanel.css';
-import { Mic, MicOff, ChevronLeft, Edit2, Bookmark, X, CheckCircle, Mail } from 'lucide-react';
+import { Mic, MicOff, ChevronLeft, Edit2, Bookmark, X, CheckCircle, Mail, Send } from 'lucide-react';
 import Transcript from './Transcript';
 import OptionsGrid from './OptionsGrid';
-import ChatSupport from './ChatSupport';
 import FluidVisualizer from './FluidVisualizer';
 
 const INJECTION_PATTERNS = [
@@ -49,20 +48,27 @@ async function blobToWav(blob) {
 }
 
 const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSessionDone }) => {
+  // ── Voice state ──────────────────────────────────────────────────
   const [voiceState,   setVoiceState]   = useState('Idle');
   const [hasStarted,   setHasStarted]   = useState(false);
-  const [transcripts,  setTranscripts]  = useState([]); // full conversation history
+  const [transcripts,  setTranscripts]  = useState([]);
   const [ariaGreeting, setAriaGreeting] = useState('');
-  const [showChat,     setShowChat]     = useState(false);
-  const [showSummary,  setShowSummary]  = useState(false);
   const [errorMsg,     setErrorMsg]     = useState('');
   const [currentLang,  setCurrentLang]  = useState('en-IN');
-  const [agentNotes,    setAgentNotes]    = useState('');
-  const [priority,      setPriority]      = useState('Normal');
-  const [issueSummary,  setIssueSummary]  = useState('');
 
-  // Ticket confirmation state
-  const [ticketStatus, setTicketStatus] = useState(null); // null | { ticketId, emailSent, customerEmailed, loading }
+  // ── Chat state (inline — no overlay) ────────────────────────────
+  const [showChat,      setShowChat]      = useState(false);
+  const [chatMessages,  setChatMessages]  = useState([]);
+  const [chatInput,     setChatInput]     = useState('');
+  const [isChatTyping,  setIsChatTyping]  = useState(false);
+  const chatEndRef = useRef(null);
+
+  // ── Session / ticket state ───────────────────────────────────────
+  const [showSummary,  setShowSummary]  = useState(false);
+  const [agentNotes,   setAgentNotes]   = useState('');
+  const [priority,     setPriority]     = useState('Normal');
+  const [issueSummary, setIssueSummary] = useState('');
+  const [ticketStatus, setTicketStatus] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef   = useRef([]);
@@ -95,7 +101,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     currentAudioRef.current = null;
   }, [currentLang]);
 
-  // ── STT — sends WAV ──────────────────────────────────────────────
+  // ── STT ──────────────────────────────────────────────────────────
   const transcribeAudio = async (rawBlob) => {
     const wavBlob = await blobToWav(rawBlob);
     const fd = new FormData();
@@ -123,10 +129,45 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-scroll to latest transcript entry
+  // ── Auto-scroll ──────────────────────────────────────────────────
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [transcripts]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, isChatTyping]);
+
+  // ── Chat send ────────────────────────────────────────────────────
+  const handleChatSend = async () => {
+    const text = chatInput.trim();
+    if (!text || isChatTyping) return;
+    if (text.length > 1000) { setChatInput(''); return; }
+    if (INJECTION_PATTERNS.some(p => p.test(text))) {
+      setChatMessages(prev => [...prev,
+        { id: Date.now(),     sender: 'user', text },
+        { id: Date.now() + 1, sender: 'ai',   text: "I'm here to help with Trane and ThermoKing support only." },
+      ]);
+      setChatInput('');
+      return;
+    }
+    setChatMessages(prev => [...prev, { id: Date.now(), sender: 'user', text }]);
+    setChatInput('');
+    setIsChatTyping(true);
+    try {
+      const aiText = await getAIResponse(text);
+      setIsChatTyping(false);
+      setChatMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: aiText }]);
+      speakText(aiText).catch(() => {});
+    } catch {
+      setIsChatTyping(false);
+      setChatMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: 'Error. Please try again.' }]);
+    }
+  };
+
+  const handleChatKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); }
+  };
 
   // ── Option card selected ─────────────────────────────────────────
   const handleOptionSelect = async (option) => {
@@ -135,11 +176,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     setHasStarted(true);
     setVoiceStateSynced('Processing');
     setErrorMsg('');
-    sessionDataRef.current = {
-      ...sessionDataRef.current,
-      type: option.value, issue: option.value,
-      purchaseIntent: option.value === 'Purchase Inquiry',
-    };
+    sessionDataRef.current = { ...sessionDataRef.current, type: option.value, issue: option.value, purchaseIntent: option.value === 'Purchase Inquiry' };
     try {
       const aiText = await getAIResponse(option.aiText);
       setTranscripts(prev => [...prev, { user: option.title, ai: aiText }]);
@@ -149,7 +186,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     setVoiceStateSynced('Idle');
   };
 
-  // ── Tap-to-toggle recording ──────────────────────────────────────
+  // ── Mic ──────────────────────────────────────────────────────────
   const handleMicClick = async () => {
     if (isRecordingRef.current) { stopRecording(); return; }
     const state = voiceStateRef.current;
@@ -187,7 +224,6 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     mediaRecorderRef.current.stop();
     streamRef.current?.getTracks().forEach(t => t.stop());
     setVoiceStateSynced('Processing');
-
     mediaRecorderRef.current.onstop = async () => {
       const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
       const rawBlob = new Blob(audioChunksRef.current, { type: mimeType });
@@ -215,7 +251,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     };
   };
 
-  // ── End session — raise ticket, show confirmation ────────────────
+  // ── End session ──────────────────────────────────────────────────
   const handleEndSession = async () => {
     setTicketStatus({ loading: true });
     try {
@@ -226,7 +262,6 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     }
   };
 
-  // ── Status text ──────────────────────────────────────────────────
   const getStatusText = () => {
     switch (voiceStateRef.current) {
       case 'Idle':       return 'Tap 🎤 to speak';
@@ -241,10 +276,160 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const isBusy = voiceState === 'Processing';
   const isListening = voiceState === 'Listening';
 
+  // ── CHAT MODE: swap content in-place, no overlay ─────────────────
+  if (showChat) {
+    return (
+      <div className="voice-panel-container">
+        {/* Chat header */}
+        <div className="voice-header">
+          <button className="icon-glass-button back-btn" onClick={() => setShowChat(false)}>
+            <ChevronLeft size={20} color="#FFF" />
+          </button>
+          <h2 className="header-title">Text Support</h2>
+          <button
+            onClick={() => { setShowChat(false); setShowSummary(true); }}
+            style={{
+              fontSize: 11, fontWeight: 600, color: '#fca5a5',
+              background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)',
+              borderRadius: 20, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            End Session
+          </button>
+        </div>
+
+        {/* Chat messages — uses the same dynamic-content-area that already scrolls correctly */}
+        <div className="dynamic-content-area">
+          {chatMessages.length === 0 && (
+            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, textAlign: 'center', marginTop: 24 }}>
+              Type your question below and Yazhni will respond here.
+            </div>
+          )}
+          {chatMessages.map(msg => (
+            <div key={msg.id} style={{ display: 'flex', width: '100%', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
+              <div style={{
+                maxWidth: '78%', padding: '10px 14px', fontSize: 13, lineHeight: 1.55,
+                borderRadius: 18,
+                ...(msg.sender === 'user'
+                  ? { background: '#A970FF', color: '#fff', borderBottomRightRadius: 4, boxShadow: '0 3px 12px rgba(169,112,255,0.3)' }
+                  : { background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)', borderBottomLeftRadius: 4 }
+                ),
+              }}>
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {isChatTyping && (
+            <div style={{ display: 'flex', gap: 4, padding: '10px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, borderBottomLeftRadius: 4, width: 'fit-content', marginBottom: 10 }}>
+              {[0,1,2].map(i => (
+                <span key={i} style={{ display: 'block', width: 6, height: 6, background: '#5EDCFF', borderRadius: '50%', animation: `bounceDots 1.4s infinite ease-in-out`, animationDelay: i === 0 ? '-0.32s' : i === 1 ? '-0.16s' : '0s' }} />
+              ))}
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        {/* Chat input — uses same bottom-controls area */}
+        <div className="bottom-controls" style={{ padding: '8px 16px 16px' }}>
+          <input
+            type="text"
+            placeholder="Type your message…"
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={handleChatKey}
+            autoFocus
+            style={{
+              flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(169,112,255,0.3)', color: '#fff',
+              padding: '12px 18px', borderRadius: 100, outline: 'none',
+              fontFamily: 'inherit', fontSize: 14,
+            }}
+          />
+          <button
+            onClick={handleChatSend}
+            disabled={isChatTyping}
+            style={{
+              width: 44, height: 44, flexShrink: 0, borderRadius: '50%',
+              display: 'flex', justifyContent: 'center', alignItems: 'center',
+              background: 'rgba(169,112,255,0.15)', border: '1px solid rgba(169,112,255,0.35)',
+              cursor: 'pointer',
+            }}
+          >
+            <Send size={16} color="#A970FF" />
+          </button>
+        </div>
+
+        {/* Summary overlay (accessible from End Session) */}
+        {showSummary && (
+          <div className="vp-overlay vp-overlay-summary">
+            {ticketStatus && !ticketStatus.loading && ticketStatus.ticketId && (
+              <div className="ticket-confirm">
+                <CheckCircle size={52} color="#22c55e" style={{ marginBottom: 16 }} />
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#22c55e', marginBottom: 8 }}>Ticket Raised!</h3>
+                <div className="ticket-id-box">
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: 1 }}>TICKET ID</span>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: '#a78bfa', letterSpacing: 1.5, fontFamily: 'monospace' }}>{ticketStatus.ticketId}</span>
+                </div>
+                <div className="ticket-status-rows">
+                  <div className="ticket-status-row"><span>📊 Excel</span><span style={{ color: '#22c55e' }}>✓ Saved</span></div>
+                  {ticketStatus.emailSent && <div className="ticket-status-row"><span><Mail size={14} style={{ verticalAlign: 'middle' }} /> CS Team</span><span style={{ color: '#22c55e' }}>✓ Email sent</span></div>}
+                  {ticketStatus.customerEmailed && <div className="ticket-status-row"><span>👤 Customer</span><span style={{ color: '#22c55e' }}>✓ Notified</span></div>}
+                </div>
+                <button onClick={onSessionDone} style={{ marginTop: 20, padding: '12px 32px', borderRadius: 100, border: 'none', background: 'linear-gradient(135deg,#7c3aed,#4c1d95)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Done — Start New Session
+                </button>
+              </div>
+            )}
+            {ticketStatus?.loading && (
+              <div className="ticket-confirm">
+                <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
+                <p style={{ color: 'rgba(255,255,255,0.7)' }}>Raising ticket & sending email…</p>
+              </div>
+            )}
+            {!ticketStatus && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, width: '100%', maxWidth: 420 }}>
+                  <h3 className="neon-text-primary" style={{ fontSize: 16, fontWeight: 700 }}>Session Summary</h3>
+                  <button className="icon-close-btn" onClick={() => setShowSummary(false)}><X size={20} color="#fff" /></button>
+                </div>
+                <div style={{ width: '100%', maxWidth: 420, maxHeight: '100%', overflowY: 'auto' }}>
+                  <div className="summary-info-grid" style={{ marginBottom: 12 }}>
+                    {[{ label: 'Name', value: sd.name }, { label: 'Contact', value: sd.contact }, { label: 'Location', value: sd.location }, { label: 'Issue', value: sd.type || sd.issue }, { label: 'Product', value: sd.product }].map(({ label, value }) => value ? (
+                      <div key={label} className="summary-info-row"><span className="summary-info-label">{label}</span><span className="summary-info-value">{value}</span></div>
+                    ) : null)}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>ISSUE SUMMARY <span style={{ color: '#a78bfa' }}>→ Excel & Email</span></label>
+                    <textarea value={issueSummary} onChange={e => setIssueSummary(e.target.value)} placeholder="Brief description of the customer's issue…" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(169,112,255,0.1)', border: '1px solid rgba(169,112,255,0.35)', color: 'white', fontFamily: 'inherit', fontSize: 12, resize: 'vertical', minHeight: 56, outline: 'none' }} />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>PRIORITY</label>
+                    <select value={priority} onChange={e => setPriority(e.target.value)} style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.35)', color: 'white', borderRadius: 8, padding: '7px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', cursor: 'pointer' }}>
+                      <option value="Normal">Normal</option>
+                      <option value="High">High</option>
+                      <option value="Urgent">Urgent</option>
+                    </select>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>INTERNAL NOTES</label>
+                    <textarea value={agentNotes} onChange={e => setAgentNotes(e.target.value)} placeholder="Internal notes — not shared with customer…" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', color: 'white', fontFamily: 'inherit', fontSize: 12, resize: 'vertical', minHeight: 56, outline: 'none' }} />
+                  </div>
+                  <button onClick={handleEndSession} style={{ width: '100%', padding: '13px 0', borderRadius: 100, border: 'none', background: 'linear-gradient(135deg,#E31837,#9b1226)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(227,24,55,0.45)' }}>
+                    🎫 Raise Ticket & Send Email
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── VOICE MODE ───────────────────────────────────────────────────
   return (
     <div className="voice-panel-container">
 
-      {/* Header */}
       <div className="voice-header fade-in-up">
         <button className="icon-glass-button back-btn" onClick={onBack}>
           <ChevronLeft size={20} color="#FFF" />
@@ -253,17 +438,8 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
         <div className="header-spacer"></div>
       </div>
 
-      {/* Language selector */}
       <div style={{ paddingBottom: 4, width: '100%', paddingLeft: 20, paddingRight: 20, flexShrink: 0 }}>
-        <select
-          value={currentLang}
-          onChange={e => setCurrentLang(e.target.value)}
-          style={{
-            background: 'rgba(169,112,255,0.12)', border: '1px solid rgba(169,112,255,0.3)',
-            color: 'rgba(255,255,255,0.7)', borderRadius: 20, padding: '4px 12px',
-            fontSize: 11, fontFamily: 'inherit', outline: 'none', cursor: 'pointer',
-          }}
-        >
+        <select value={currentLang} onChange={e => setCurrentLang(e.target.value)} style={{ background: 'rgba(169,112,255,0.12)', border: '1px solid rgba(169,112,255,0.3)', color: 'rgba(255,255,255,0.7)', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}>
           <option value="en-IN">English (India)</option>
           <option value="hi-IN">हिन्दी (Hindi)</option>
           <option value="ta-IN">தமிழ் (Tamil)</option>
@@ -272,12 +448,11 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           <option value="ml-IN">മലയാളം (Malayalam)</option>
           <option value="mr-IN">मराठी (Marathi)</option>
           <option value="bn-IN">বাংলা (Bengali)</option>
-          <option value="gu-IN">ગુજરાતી (Gujarati)</option>
+          <option value="gu-IN">ગుజरাতী (Gujarati)</option>
         </select>
       </div>
 
       <p className="status-text neon-text-secondary">{getStatusText()}</p>
-
       <FluidVisualizer isActive={isListening} />
 
       {errorMsg && (
@@ -287,7 +462,6 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
       )}
 
       <div className="dynamic-content-area fade-in-up delay-2">
-        {/* Initial state: greeting + quick options */}
         {voiceState === 'Idle' && !hasStarted && (
           <>
             {ariaGreeting && (
@@ -299,47 +473,24 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
             <OptionsGrid onOptionSelect={handleOptionSelect} />
           </>
         )}
-
-        {/* In-progress status messages */}
-        {isListening && (
-          <div className="abstract-description">
-            <p>Listening… speak clearly, then tap the mic to send.</p>
-          </div>
-        )}
-        {isBusy && (
-          <div className="abstract-description">
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Processing…</p>
-          </div>
-        )}
-
-        {/* Full conversation history — all turns visible */}
+        {isListening && <div className="abstract-description"><p>Listening… speak clearly, then tap the mic to send.</p></div>}
+        {isBusy && <div className="abstract-description"><p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Processing…</p></div>}
         {hasStarted && transcripts.length > 0 && (
           <div className="transcript-history">
-            {transcripts.map((t, i) => (
-              <Transcript key={i} userSpeech={t.user} AIResponse={t.ai} />
-            ))}
+            {transcripts.map((t, i) => <Transcript key={i} userSpeech={t.user} AIResponse={t.ai} />)}
             <div ref={transcriptEndRef} />
           </div>
         )}
       </div>
 
-      {/* Bottom controls */}
       <div className="bottom-controls fade-in-up delay-3">
         <button className="control-btn" onClick={() => setShowChat(true)} title="Text Chat">
           <Edit2 size={20} color="#E5E7EB" />
         </button>
         <div className="microphone-container">
           <div className={`mic-rings ${isListening ? 'mic-rings-active' : ''}`}></div>
-          <button
-            className={`mic-button ${isListening ? 'mic-active' : ''} ${isBusy ? 'mic-disabled' : ''}`}
-            onClick={handleMicClick}
-            disabled={isBusy}
-            title={isListening ? 'Tap to send' : 'Tap to speak'}
-          >
-            {isListening
-              ? <MicOff size={28} color="#A970FF" />
-              : <Mic    size={28} color={isBusy ? 'rgba(255,255,255,0.3)' : '#FFFFFF'} />
-            }
+          <button className={`mic-button ${isListening ? 'mic-active' : ''} ${isBusy ? 'mic-disabled' : ''}`} onClick={handleMicClick} disabled={isBusy} title={isListening ? 'Tap to send' : 'Tap to speak'}>
+            {isListening ? <MicOff size={28} color="#A970FF" /> : <Mic size={28} color={isBusy ? 'rgba(255,255,255,0.3)' : '#FFFFFF'} />}
           </button>
           {isListening && <div className="mic-ripple" />}
         </div>
@@ -348,171 +499,64 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
         </button>
       </div>
 
-      {/* ── Text chat overlay — same absolute context as summary, all inline styles ── */}
-      {showChat && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          background: '#0e0822', zIndex: 200, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        }}>
-          <ChatSupport
-            onClose={() => setShowChat(false)}
-            onEndSession={() => { setShowChat(false); setShowSummary(true); }}
-            getAIResponse={getAIResponse}
-            speakText={speakText}
-          />
-        </div>
-      )}
-
-      {/* ── Session summary + ticket overlay ── */}
       {showSummary && (
         <div className="vp-overlay vp-overlay-summary">
-
-          {/* ── Ticket confirmation screen ── */}
           {ticketStatus && !ticketStatus.loading && ticketStatus.ticketId && (
             <div className="ticket-confirm">
               <CheckCircle size={52} color="#22c55e" style={{ marginBottom: 16 }} />
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#22c55e', marginBottom: 8 }}>
-                Ticket Raised!
-              </h3>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#22c55e', marginBottom: 8 }}>Ticket Raised!</h3>
               <div className="ticket-id-box">
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: 1 }}>TICKET ID</span>
-                <span style={{ fontSize: 22, fontWeight: 800, color: '#a78bfa', letterSpacing: 1.5, fontFamily: 'monospace' }}>
-                  {ticketStatus.ticketId}
-                </span>
+                <span style={{ fontSize: 22, fontWeight: 800, color: '#a78bfa', letterSpacing: 1.5, fontFamily: 'monospace' }}>{ticketStatus.ticketId}</span>
               </div>
               <div className="ticket-status-rows">
-                <div className="ticket-status-row">
-                  <span>📊 Excel</span>
-                  <span style={{ color: '#22c55e' }}>✓ Saved to tickets.xlsx</span>
-                </div>
+                <div className="ticket-status-row"><span>📊 Excel</span><span style={{ color: '#22c55e' }}>✓ Saved to tickets.xlsx</span></div>
                 {ticketStatus.emailSent ? (
-                  <div className="ticket-status-row">
-                    <span><Mail size={14} style={{ verticalAlign: 'middle' }} /> CS Team</span>
-                    <span style={{ color: '#22c55e' }}>✓ Email sent</span>
-                  </div>
+                  <div className="ticket-status-row"><span><Mail size={14} style={{ verticalAlign: 'middle' }} /> CS Team</span><span style={{ color: '#22c55e' }}>✓ Email sent</span></div>
                 ) : (
-                  <div className="ticket-status-row">
-                    <span><Mail size={14} style={{ verticalAlign: 'middle' }} /> CS Team</span>
-                    <span style={{ color: '#fbbf24' }}>Configure CS_EMAIL in .env</span>
-                  </div>
+                  <div className="ticket-status-row"><span><Mail size={14} style={{ verticalAlign: 'middle' }} /> CS Team</span><span style={{ color: '#fbbf24' }}>Configure CS_EMAIL in .env</span></div>
                 )}
-                {ticketStatus.customerEmailed && (
-                  <div className="ticket-status-row">
-                    <span>👤 Customer CC</span>
-                    <span style={{ color: '#22c55e' }}>✓ Notified</span>
-                  </div>
-                )}
+                {ticketStatus.customerEmailed && <div className="ticket-status-row"><span>👤 Customer CC</span><span style={{ color: '#22c55e' }}>✓ Notified</span></div>}
               </div>
-              <button
-                onClick={onSessionDone}
-                style={{
-                  marginTop: 20, padding: '12px 32px', borderRadius: 100, border: 'none',
-                  background: 'linear-gradient(135deg, #7c3aed, #4c1d95)',
-                  color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                  fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(124,58,237,0.5)',
-                }}
-              >
+              <button onClick={onSessionDone} style={{ marginTop: 20, padding: '12px 32px', borderRadius: 100, border: 'none', background: 'linear-gradient(135deg,#7c3aed,#4c1d95)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(124,58,237,0.5)' }}>
                 Done — Start New Session
               </button>
             </div>
           )}
-
-          {/* ── Ticket loading ── */}
           {ticketStatus?.loading && (
             <div className="ticket-confirm">
               <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
               <p style={{ color: 'rgba(255,255,255,0.7)' }}>Raising ticket & sending email…</p>
             </div>
           )}
-
-          {/* ── Summary form (before ticket raised) ── */}
           {!ticketStatus && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <h3 className="neon-text-primary" style={{ fontSize: 16, fontWeight: 700 }}>Session Summary</h3>
-                <button className="icon-close-btn" onClick={() => setShowSummary(false)}>
-                  <X size={20} color="#fff" />
-                </button>
+                <button className="icon-close-btn" onClick={() => setShowSummary(false)}><X size={20} color="#fff" /></button>
               </div>
-
-              {/* Customer info */}
               <div className="summary-info-grid">
-                {[
-                  { label: 'Name',     value: sd.name    },
-                  { label: 'Contact',  value: sd.contact },
-                  { label: 'Location', value: sd.location },
-                  { label: 'Issue',    value: sd.type || sd.issue },
-                  { label: 'Product',  value: sd.product },
-                ].map(({ label, value }) => value ? (
-                  <div key={label} className="summary-info-row">
-                    <span className="summary-info-label">{label}</span>
-                    <span className="summary-info-value">{value}</span>
-                  </div>
+                {[{ label: 'Name', value: sd.name }, { label: 'Contact', value: sd.contact }, { label: 'Location', value: sd.location }, { label: 'Issue', value: sd.type || sd.issue }, { label: 'Product', value: sd.product }].map(({ label, value }) => value ? (
+                  <div key={label} className="summary-info-row"><span className="summary-info-label">{label}</span><span className="summary-info-value">{value}</span></div>
                 ) : null)}
               </div>
-
-              {/* Issue Summary — goes into Excel + email */}
               <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>
-                  ISSUE SUMMARY <span style={{ color: '#a78bfa' }}>→ Excel &amp; Email</span>
-                </label>
-                <textarea
-                  value={issueSummary}
-                  onChange={e => setIssueSummary(e.target.value)}
-                  placeholder="Brief description of the customer's issue (e.g. AC not cooling, fault code E5)…"
-                  style={{
-                    width: '100%', padding: '9px 12px', borderRadius: 8,
-                    background: 'rgba(169,112,255,0.1)', border: '1px solid rgba(169,112,255,0.35)',
-                    color: 'white', fontFamily: 'inherit', fontSize: 12,
-                    resize: 'vertical', minHeight: 56, outline: 'none',
-                  }}
-                />
+                <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>ISSUE SUMMARY <span style={{ color: '#a78bfa' }}>→ Excel & Email</span></label>
+                <textarea value={issueSummary} onChange={e => setIssueSummary(e.target.value)} placeholder="Brief description of the customer's issue (e.g. AC not cooling, fault code E5)…" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(169,112,255,0.1)', border: '1px solid rgba(169,112,255,0.35)', color: 'white', fontFamily: 'inherit', fontSize: 12, resize: 'vertical', minHeight: 56, outline: 'none' }} />
               </div>
-
-              {/* Priority */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>PRIORITY</label>
-                <select
-                  value={priority}
-                  onChange={e => setPriority(e.target.value)}
-                  style={{
-                    background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.35)',
-                    color: 'white', borderRadius: 8, padding: '7px 12px', fontSize: 13,
-                    fontFamily: 'inherit', outline: 'none', width: '100%', cursor: 'pointer',
-                  }}
-                >
+                <select value={priority} onChange={e => setPriority(e.target.value)} style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.35)', color: 'white', borderRadius: 8, padding: '7px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', cursor: 'pointer' }}>
                   <option value="Normal">Normal</option>
                   <option value="High">High</option>
                   <option value="Urgent">Urgent</option>
                 </select>
               </div>
-
-              {/* Agent notes */}
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>INTERNAL NOTES (not in email)</label>
-                <textarea
-                  value={agentNotes}
-                  onChange={e => setAgentNotes(e.target.value)}
-                  placeholder="Internal notes — not shared with customer…"
-                  style={{
-                    width: '100%', padding: '9px 12px', borderRadius: 8,
-                    background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)',
-                    color: 'white', fontFamily: 'inherit', fontSize: 12,
-                    resize: 'vertical', minHeight: 56, outline: 'none',
-                  }}
-                />
+                <textarea value={agentNotes} onChange={e => setAgentNotes(e.target.value)} placeholder="Internal notes — not shared with customer…" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', color: 'white', fontFamily: 'inherit', fontSize: 12, resize: 'vertical', minHeight: 56, outline: 'none' }} />
               </div>
-
-              {/* Actions */}
-              <button
-                onClick={handleEndSession}
-                style={{
-                  width: '100%', padding: '13px 0', borderRadius: 100, border: 'none',
-                  background: 'linear-gradient(135deg, #E31837, #9b1226)',
-                  color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                  fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(227,24,55,0.45)',
-                }}
-              >
+              <button onClick={handleEndSession} style={{ width: '100%', padding: '13px 0', borderRadius: 100, border: 'none', background: 'linear-gradient(135deg,#E31837,#9b1226)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(227,24,55,0.45)' }}>
                 🎫 Raise Ticket & Send Email
               </button>
             </>
