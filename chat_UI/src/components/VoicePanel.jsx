@@ -5,6 +5,17 @@ import Transcript from './Transcript';
 import OptionsGrid from './OptionsGrid';
 import FluidVisualizer from './FluidVisualizer';
 
+// Detect when the customer signals they're done with the conversation
+const CHAT_DONE_PATTERNS = [
+  /^(thank\s*you|thanks|thx|ty)[.!\s]*$/i,                                             // bare thanks
+  /\b(bye|goodbye|see\s+you|take\s+care|good\s+day)\b/i,                               // farewells
+  /\b(that[''`]?s?\s+(all|it|everything)|nothing\s+else|all\s+(done|set|good))\b/i,    // "that's all"
+  /\b(i[''`]?m?\s+(done|good|all\s+set|satisfied)|we[''`]?re?\s+good)\b/i,             // "I'm done"
+  /\b(no\s*(more)?\s*(questions?|help|issues?)?$|no[\s,]+thanks?|no[\s,]+thank\s+you)\b/i,
+  /\b(issue|problem)\s+(is\s+)?(resolved|solved|fixed)\b/i,
+  /\b(it[''`]?s?\s+)?(working|works?)\s*now\b/i,
+];
+
 const INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?(previous|prior|above|earlier)\s+instructions?/i,
   /disregard\s+(all\s+)?(previous|prior|your)\s+instructions?/i,
@@ -57,11 +68,13 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const [currentLang,  setCurrentLang]  = useState('en-IN');
 
   // ── Chat state (inline — no overlay) ────────────────────────────
-  const [showChat,      setShowChat]      = useState(false);
-  const [chatMessages,  setChatMessages]  = useState([]);
-  const [chatInput,     setChatInput]     = useState('');
-  const [isChatTyping,  setIsChatTyping]  = useState(false);
-  const chatEndRef = useRef(null);
+  const [showChat,        setShowChat]        = useState(false);
+  const [chatMessages,    setChatMessages]    = useState([]);
+  const [chatInput,       setChatInput]       = useState('');
+  const [isChatTyping,    setIsChatTyping]    = useState(false);
+  const [chatWrapCountdown, setChatWrapCountdown] = useState(null); // null | 4 | 3 | 2 | 1
+  const chatEndRef      = useRef(null);
+  const wrapTimerRef    = useRef(null);
 
   // ── Session / ticket state ───────────────────────────────────────
   const [showSummary,  setShowSummary]  = useState(false);
@@ -140,11 +153,35 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
     }
   }, [chatMessages, isChatTyping]);
 
+  // ── Wrap-up countdown ────────────────────────────────────────────
+  const startWrapCountdown = () => {
+    clearInterval(wrapTimerRef.current);
+    setChatWrapCountdown(4);
+    let count = 4;
+    wrapTimerRef.current = setInterval(() => {
+      count -= 1;
+      if (count <= 0) {
+        clearInterval(wrapTimerRef.current);
+        setChatWrapCountdown(null);
+        setShowChat(false);
+        setShowSummary(true);
+      } else {
+        setChatWrapCountdown(count);
+      }
+    }, 1000);
+  };
+
+  const cancelWrap = () => {
+    clearInterval(wrapTimerRef.current);
+    setChatWrapCountdown(null);
+  };
+
   // ── Chat send ────────────────────────────────────────────────────
   const handleChatSend = async (textOverride) => {
     const text = (textOverride !== undefined ? textOverride : chatInput).trim();
     if (!text || isChatTyping) return;
     if (text.length > 1000) { setChatInput(''); return; }
+    cancelWrap(); // reset any pending countdown if user sends a new message
     if (INJECTION_PATTERNS.some(p => p.test(text))) {
       setChatMessages(prev => [...prev,
         { id: Date.now(),     sender: 'user', text },
@@ -153,6 +190,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
       setChatInput('');
       return;
     }
+    const isDone = CHAT_DONE_PATTERNS.some(p => p.test(text));
     setChatMessages(prev => [...prev, { id: Date.now(), sender: 'user', text }]);
     setChatInput('');
     setIsChatTyping(true);
@@ -161,6 +199,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
       setIsChatTyping(false);
       setChatMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: aiText }]);
       speakText(aiText).catch(() => {});
+      if (isDone) startWrapCountdown();
     } catch {
       setIsChatTyping(false);
       setChatMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: 'Error. Please try again.' }]);
@@ -370,6 +409,32 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           <div ref={chatEndRef} />
         </div>{/* end inner wrapper */}
         </div>
+
+        {/* ── Wrap-up countdown banner ── */}
+        {chatWrapCountdown !== null && (
+          <div style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 16px', gap: 8,
+            background: 'linear-gradient(90deg, rgba(124,58,237,0.25), rgba(94,220,255,0.1))',
+            borderTop: '1px solid rgba(169,112,255,0.3)',
+          }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)' }}>
+              Session ending in <strong style={{ color: '#A970FF' }}>{chatWrapCountdown}s</strong>…
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={cancelWrap} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)',
+                color: 'rgba(255,255,255,0.8)', fontFamily: 'inherit',
+              }}>Keep Chatting</button>
+              <button onClick={() => { cancelWrap(); setShowChat(false); setShowSummary(true); }} style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                background: 'rgba(220,38,38,0.2)', border: '1px solid rgba(220,38,38,0.4)',
+                color: '#fca5a5', fontFamily: 'inherit',
+              }}>End Now</button>
+            </div>
+          </div>
+        )}
 
         {/* ── Input bar ── */}
         <div style={{
