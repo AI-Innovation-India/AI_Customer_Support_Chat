@@ -3,6 +3,7 @@ import './App.css';
 import WelcomeScreen from './components/WelcomeScreen';
 import IntakeForm from './components/IntakeForm';
 import VoicePanel from './components/VoicePanel';
+import KnowledgeBaseAdmin from './components/KnowledgeBaseAdmin';
 
 // ── Session cache ─────────────────────────────────────────────
 const CACHE_KEY = 'trane_session_v1';
@@ -29,6 +30,32 @@ function App() {
   const [currentScreen, setCurrentScreen] = useState(
     cached?.name ? 'voice' : 'welcome'
   );
+  const [showKBAdmin,  setShowKBAdmin]  = useState(false);
+  const [agentToken,   setAgentToken]   = useState(() => sessionStorage.getItem('agent_token') || '');
+  const [loginModal,   setLoginModal]   = useState(false);
+  const [loginErr,     setLoginErr]     = useState('');
+  const [loginForm,    setLoginForm]    = useState({ user: '', pass: '' });
+
+  const handleAgentLogin = async () => {
+    setLoginErr('');
+    try {
+      const r = await fetch('/api/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginForm.user, password: loginForm.pass }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setLoginErr(d.error || 'Login failed'); return; }
+      sessionStorage.setItem('agent_token', d.token);
+      setAgentToken(d.token);
+      setLoginModal(false);
+      setShowKBAdmin(true);
+    } catch { setLoginErr('Network error'); }
+  };
+
+  const openKBAdmin = () => {
+    if (agentToken) { setShowKBAdmin(true); }
+    else { setLoginModal(true); }
+  };
 
   const messagesRef      = useRef([]);
   const customerCtxRef   = useRef(cached?.name
@@ -145,6 +172,39 @@ function App() {
       <div className="ambient-orb orb-1"></div>
       <div className="ambient-orb orb-2"></div>
       <div className="ambient-orb orb-3"></div>
+
+      {/* ── Agent KB Admin button (bottom-right, always visible) ── */}
+      <button onClick={openKBAdmin} title="Knowledge Base Admin" style={{
+        position: 'fixed', bottom: 18, right: 18, zIndex: 300,
+        width: 40, height: 40, borderRadius: '50%',
+        background: 'rgba(169,112,255,0.12)', border: '1px solid rgba(169,112,255,0.3)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        fontSize: 17, color: 'rgba(255,255,255,0.5)', transition: 'all 0.2s',
+      }}>🔑</button>
+
+      {/* ── Agent login modal ── */}
+      {loginModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#0e0822', border: '1px solid rgba(169,112,255,0.3)', borderRadius: 18, padding: 28, width: 320 }}>
+            <h3 style={{ color: '#fff', marginBottom: 16, fontSize: 15 }}>Agent Login</h3>
+            <input placeholder="Username" value={loginForm.user}
+              onChange={e => setLoginForm(p => ({ ...p, user: e.target.value }))}
+              style={{ width: '100%', marginBottom: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(169,112,255,0.25)', color: '#fff', outline: 'none', fontFamily: 'inherit', fontSize: 13, boxSizing: 'border-box' }} />
+            <input type="password" placeholder="Password" value={loginForm.pass}
+              onChange={e => setLoginForm(p => ({ ...p, pass: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleAgentLogin()}
+              style={{ width: '100%', marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(169,112,255,0.25)', color: '#fff', outline: 'none', fontFamily: 'inherit', fontSize: 13, boxSizing: 'border-box' }} />
+            {loginErr && <p style={{ color: '#fca5a5', fontSize: 12, marginBottom: 10 }}>{loginErr}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleAgentLogin} style={{ flex: 1, padding: '9px', background: 'linear-gradient(135deg,#7c3aed,#A970FF)', border: 'none', borderRadius: 10, color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Login</button>
+              <button onClick={() => { setLoginModal(false); setLoginErr(''); }} style={{ padding: '9px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, color: 'rgba(255,255,255,0.7)', fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── KB Admin panel ── */}
+      {showKBAdmin && <KnowledgeBaseAdmin authToken={agentToken} onClose={() => setShowKBAdmin(false)} />}
 
       {currentScreen === 'welcome' && (
         <div className="screen-wrapper fade-in-screen">

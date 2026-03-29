@@ -37,6 +37,7 @@ const ttsRouter     = require('./routes/tts');
 const chatRouter    = require('./routes/chat');
 const sessionRouter = require('./routes/session');
 const ticketRouter  = require('./routes/ticket');
+const kbRouter      = require('./routes/kb');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -61,7 +62,7 @@ app.use(helmet({
 const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
 app.use(cors({
   origin: allowedOrigin === '*' ? '*' : allowedOrigin.split(',').map(s => s.trim()),
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
@@ -86,6 +87,7 @@ app.use('/api/tts',     ttsRouter);
 app.use('/api/chat',    chatRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/ticket',  ticketRouter);
+app.use('/api/kb',      kbRouter);
 
 // ── Health check (no auth — for load balancers / uptime monitors)
 app.get('/health', (req, res) => {
@@ -129,6 +131,7 @@ app.listen(PORT, () => {
   console.log(`  Mode    : ${process.env.NODE_ENV || 'development'}`);
   console.log(`  AI      : ${process.env.USE_AZURE === 'true' ? 'Azure OpenAI' : 'Groq'}`);
   console.log(`  Sarvam  : ${process.env.SARVAM_KEY ? '✓ configured' : '✗ missing key'}`);
+  console.log(`  RAG KB  : ${process.env.RAG_SERVICE_URL || 'http://localhost:8000'}`);
   console.log(`  Exports : ${exportsDir}`);
   console.log('');
 });

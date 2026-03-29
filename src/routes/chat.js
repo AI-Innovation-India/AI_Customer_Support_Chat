@@ -12,6 +12,25 @@ const { sanitizeChat } = require('../middleware/sanitize');
 
 const router = express.Router();
 
+const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://localhost:8000';
+
+// ── Fetch relevant KB context for the customer's question ─────────────────────
+async function getKBContext(question) {
+  try {
+    const r = await fetch(`${RAG_SERVICE_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, top_k: 5 }),
+      signal: AbortSignal.timeout(4000),   // don't block the chat if RAG is slow
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.context && data.total > 0 ? data.context : null;
+  } catch {
+    return null;   // RAG service offline → fall back to pure prompt
+  }
+}
+
 // ── Canonical system prompt — owned by server, never by client ──
 const BASE_SYSTEM_PROMPT = `You are Yazhni, a warm and knowledgeable virtual support specialist for Trane and ThermoKing — world leaders in HVAC and transport refrigeration solutions.
 
@@ -38,11 +57,22 @@ Always respond in the SAME LANGUAGE the customer uses. Keep responses to 2-3 sen
 router.post('/', chatLimiter, sanitizeChat, async (req, res) => {
   const { messages, customerContext } = req.body;
 
-  // customerContext is a plain text note about the customer (from intake form)
-  // It's trusted only to be appended after the base prompt — it cannot override the guardrails
-  const systemPrompt = customerContext
-    ? `${BASE_SYSTEM_PROMPT}\n\n${String(customerContext).slice(0, 1500)}`
-    : BASE_SYSTEM_PROMPT;
+  // Pull the latest customer message for KB retrieval
+  const lastUserMsg = [...(messages || [])]
+    .reverse()
+    .find(m => m.role === 'user')?.content || '';
+
+  // Retrieve relevant product/technical knowledge from the KB (best-effort)
+  const kbContext = lastUserMsg ? await getKBContext(lastUserMsg) : null;
+
+  // Build enriched system prompt: guardrails + customer info + KB context
+  let systemPrompt = BASE_SYSTEM_PROMPT;
+  if (customerContext) {
+    systemPrompt += `\n\n${String(customerContext).slice(0, 1500)}`;
+  }
+  if (kbContext) {
+    systemPrompt += `\n\n--- RELEVANT PRODUCT KNOWLEDGE (use this to answer accurately) ---\n${kbContext.slice(0, 6000)}\n--- END KNOWLEDGE ---\n\nIMPORTANT: When the knowledge above is relevant, base your answer on it. Do not invent specifications, fault codes, or procedures not in the knowledge.`;
+  }
 
   const useAzure = process.env.USE_AZURE === 'true';
 
