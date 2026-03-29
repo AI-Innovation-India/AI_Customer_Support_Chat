@@ -135,12 +135,14 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   }, [transcripts]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatMessages.length > 0 || isChatTyping) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   }, [chatMessages, isChatTyping]);
 
   // ── Chat send ────────────────────────────────────────────────────
-  const handleChatSend = async () => {
-    const text = chatInput.trim();
+  const handleChatSend = async (textOverride) => {
+    const text = (textOverride !== undefined ? textOverride : chatInput).trim();
     if (!text || isChatTyping) return;
     if (text.length > 1000) { setChatInput(''); return; }
     if (INJECTION_PATTERNS.some(p => p.test(text))) {
@@ -302,8 +304,10 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
 
         {/* ── Messages area ── */}
         <div className="dynamic-content-area" style={{ padding: '12px 16px 4px' }}>
+        {/* Inner wrapper: min-height 100% + flex column so messages always pin to bottom */}
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: '100%' }}>
 
-          {/* Empty state — vertically centred */}
+          {/* Empty state — vertically centred, takes all available space */}
           {chatMessages.length === 0 && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, width: '100%', paddingBottom: 24 }}>
               <div style={{
@@ -321,7 +325,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
               </div>
               {/* Quick prompts */}
               {['My AC is not cooling', 'ThermoKing fault code', 'Schedule a service'].map(q => (
-                <button key={q} onClick={() => { setChatInput(q); }}
+                <button key={q} onClick={() => handleChatSend(q)}
                   style={{
                     background: 'rgba(169,112,255,0.08)', border: '1px solid rgba(169,112,255,0.25)',
                     borderRadius: 20, padding: '7px 14px', color: 'rgba(255,255,255,0.7)',
@@ -332,6 +336,9 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
               ))}
             </div>
           )}
+
+          {/* Spacer — pushes messages to bottom when fewer than fill the panel */}
+          {chatMessages.length > 0 && <div style={{ flex: 1 }} />}
 
           {/* Messages */}
           {chatMessages.map(msg => (
@@ -361,6 +368,7 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
             </div>
           )}
           <div ref={chatEndRef} />
+        </div>{/* end inner wrapper */}
         </div>
 
         {/* ── Input bar ── */}
