@@ -282,11 +282,17 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
           else if (/trane|hvac|ac|air condition|chiller/i.test(userText))
             sessionDataRef.current = { ...sessionDataRef.current, product: 'Trane HVAC' };
         }
+        const isDone = CHAT_DONE_PATTERNS.some(p => p.test(userText));
         const aiText = await getAIResponse(userText);
         setTranscripts(prev => [...prev, { user: userText, ai: aiText }]);
         setHasStarted(true);
         setVoiceStateSynced('Responding');
         await speakText(aiText);
+        if (isDone) {
+          // Small pause so the farewell audio finishes, then auto-go to summary
+          setTimeout(() => setShowSummary(true), 1500);
+          return;
+        }
       } catch (err) { setErrorMsg(err.message); }
       setVoiceStateSynced('Idle');
     };
