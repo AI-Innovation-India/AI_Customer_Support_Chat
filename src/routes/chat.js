@@ -14,20 +14,28 @@ const router = express.Router();
 
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://localhost:8000';
 
-// ── Fetch relevant KB context for the customer's question ─────────────────────
+// ── Fetch grounded context from RAG service ───────────────────────────────────
+// Returns { context, grounded, source } or null if service is offline.
+// "grounded" = true  → real content found (KB or official web search)
+// "grounded" = false → nothing found; AI must NOT guess
 async function getKBContext(question) {
   try {
     const r = await fetch(`${RAG_SERVICE_URL}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, top_k: 5 }),
-      signal: AbortSignal.timeout(4000),   // don't block the chat if RAG is slow
+      signal: AbortSignal.timeout(5000),
     });
     if (!r.ok) return null;
     const data = await r.json();
-    return data.context && data.total > 0 ? data.context : null;
+    return {
+      context:  data.context || '',
+      grounded: data.grounded === true,
+      source:   data.source || 'none',
+      total:    data.total  || 0,
+    };
   } catch {
-    return null;   // RAG service offline → fall back to pure prompt
+    return null;   // RAG service offline — fall back to pure-prompt mode
   }
 }
 
@@ -62,17 +70,44 @@ router.post('/', chatLimiter, sanitizeChat, async (req, res) => {
     .reverse()
     .find(m => m.role === 'user')?.content || '';
 
-  // Retrieve relevant product/technical knowledge from the KB (best-effort)
-  const kbContext = lastUserMsg ? await getKBContext(lastUserMsg) : null;
+  // Retrieve grounded context from KB → web search fallback (best-effort)
+  const rag = lastUserMsg ? await getKBContext(lastUserMsg) : null;
 
-  // Build enriched system prompt: guardrails + customer info + KB context
+  // Build system prompt: base + customer note + RAG context (or no-hallucinate warning)
   let systemPrompt = BASE_SYSTEM_PROMPT;
   if (customerContext) {
     systemPrompt += `\n\n${String(customerContext).slice(0, 1500)}`;
   }
-  if (kbContext) {
-    systemPrompt += `\n\n--- RELEVANT PRODUCT KNOWLEDGE (use this to answer accurately) ---\n${kbContext.slice(0, 6000)}\n--- END KNOWLEDGE ---\n\nIMPORTANT: When the knowledge above is relevant, base your answer on it. Do not invent specifications, fault codes, or procedures not in the knowledge.`;
+
+  if (rag && rag.grounded && rag.context) {
+    // ── GROUNDED: real content found — use it, don't invent anything extra ──
+    const sourceLabel = rag.source === 'web_search'
+      ? 'OFFICIAL WEBSITE CONTENT (trane.com / thermoking.com)'
+      : 'COMPANY KNOWLEDGE BASE';
+    systemPrompt += `
+
+--- ${sourceLabel} ---
+${rag.context.slice(0, 6000)}
+--- END ---
+
+STRICT RULES FOR THIS RESPONSE:
+- Answer using ONLY the knowledge provided above.
+- Do NOT add specifications, fault codes, part numbers, or procedures that are not in the above content.
+- If the knowledge above partially covers the question, answer what you can and say "For complete details, please visit trane.com or thermoking.com."
+- Keep your response to 2-3 sentences as always.`;
+
+  } else if (rag && !rag.grounded) {
+    // ── NO GROUNDED CONTENT — strict instruction not to guess ────────────────
+    systemPrompt += `
+
+IMPORTANT — NO PRODUCT KNOWLEDGE FOUND FOR THIS QUESTION:
+The knowledge base and official websites have no specific information for this query.
+You MUST NOT guess, invent, or approximate technical details, fault codes, part numbers, or specifications.
+Instead, say something like: "I don't have the specific details for that in my knowledge base right now. I'd recommend visiting trane.com or thermoking.com, or I can raise a support ticket and our technical team will follow up with you."
+Do NOT make up any technical information.`;
+
   }
+  // rag === null means RAG service is offline — pure prompt mode, no extra instruction
 
   const useAzure = process.env.USE_AZURE === 'true';
 

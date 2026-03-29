@@ -16,7 +16,6 @@ import numpy as np
 import faiss
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
@@ -24,10 +23,25 @@ logger = logging.getLogger(__name__)
 # ── Config ─────────────────────────────────────────────────────────────────────
 CHUNK_SIZE    = int(os.getenv("CHUNK_SIZE", 800))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150))
-EMBED_MODEL   = "text-embedding-3-small"
 EMBED_DIM     = 1536
 
-client = OpenAI()  # reads OPENAI_API_KEY from env
+# ── Embedding client: Azure OpenAI (production) or OpenAI (dev/testing) ────────
+_USE_AZURE = os.getenv("USE_AZURE_EMBEDDINGS", "false").lower() == "true"
+
+if _USE_AZURE:
+    from openai import AzureOpenAI
+    _embed_client = AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_ENDPOINT", ""),
+        api_key=os.getenv("AZURE_KEY", ""),
+        api_version=os.getenv("AZURE_API_VERSION", "2024-02-01"),
+    )
+    EMBED_MODEL = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-small")
+    logger.info(f"Embeddings: Azure OpenAI — deployment '{EMBED_MODEL}'")
+else:
+    from openai import OpenAI
+    _embed_client = OpenAI()  # reads OPENAI_API_KEY from env
+    EMBED_MODEL = "text-embedding-3-small"
+    logger.info("Embeddings: OpenAI — text-embedding-3-small")
 
 # ── Text Extractors ─────────────────────────────────────────────────────────────
 
@@ -90,7 +104,7 @@ def extract_text_from_file(filename: str, content: bytes) -> str:
 
 def embed_texts(texts: list[str]) -> np.ndarray:
     """Embed a batch of texts. Returns float32 array (N, EMBED_DIM)."""
-    response = client.embeddings.create(model=EMBED_MODEL, input=texts)
+    response = _embed_client.embeddings.create(model=EMBED_MODEL, input=texts)
     vecs = [r.embedding for r in response.data]
     return np.array(vecs, dtype=np.float32)
 

@@ -1,13 +1,17 @@
 """
 Trane & ThermoKing Knowledge Base RAG Service
 FastAPI microservice — runs on port 8000
-Node.js backend calls /query to get context before answering customer
+Node.js backend calls /query to get context before answering customer.
+
+Answer sourcing priority:
+  1. FAISS knowledge base (uploaded company docs)
+  2. Web search restricted to trane.com / thermoking.com (if Tavily key set)
+  3. Neither found → returns empty context; Node.js tells AI to say "I don't know"
 """
 
 import os
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,13 +21,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ingestion import KnowledgeBase
+from web_search import search_official_sites
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 logger = logging.getLogger(__name__)
 
-# ── Globals ────────────────────────────────────────────────────────────────────
-KB_PATH = os.getenv("KB_STORAGE_PATH", "./knowledge_base")
-TOP_K   = int(os.getenv("TOP_K_RESULTS", 5))
+# ── Config ──────────────────────────────────────────────────────────────────────
+KB_PATH          = os.getenv("KB_STORAGE_PATH", "./knowledge_base")
+TOP_K            = int(os.getenv("TOP_K_RESULTS", 5))
+MIN_SCORE        = float(os.getenv("MIN_RELEVANCE_SCORE", "0.25"))  # chunks below this are dropped
+ENABLE_WEB_SEARCH = bool(os.getenv("TAVILY_API_KEY", ""))
 
 kb: KnowledgeBase | None = None
 
@@ -33,12 +40,17 @@ async def lifespan(app: FastAPI):
     global kb
     logger.info(f"Loading knowledge base from {KB_PATH} …")
     kb = KnowledgeBase(storage_path=KB_PATH)
-    logger.info(f"KB ready — {kb.index.ntotal} vectors, {len(kb.list_documents())} documents")
+    docs = kb.list_documents()
+    logger.info(f"KB ready — {kb.index.ntotal} vectors, {len(docs)} documents")
+    if ENABLE_WEB_SEARCH:
+        logger.info("Web search fallback: ENABLED (Tavily)")
+    else:
+        logger.info("Web search fallback: DISABLED (set TAVILY_API_KEY to enable)")
     yield
     logger.info("RAG service shutting down")
 
 
-app = FastAPI(title="Trane KB RAG Service", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Trane KB RAG Service", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,19 +60,18 @@ app.add_middleware(
 )
 
 
-# ── Health ─────────────────────────────────────────────────────────────────────
-
+# ── Health ──────────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "vectors": kb.index.ntotal if kb else 0,
         "documents": len(kb.list_documents()) if kb else 0,
+        "web_search": ENABLE_WEB_SEARCH,
     }
 
 
-# ── Ingest: file upload ────────────────────────────────────────────────────────
-
+# ── Ingest: file upload ─────────────────────────────────────────────────────────
 @app.post("/ingest")
 async def ingest_file(
     file: UploadFile = File(...),
@@ -68,11 +79,9 @@ async def ingest_file(
 ):
     if kb is None:
         raise HTTPException(503, "Knowledge base not ready")
-
     content = await file.read()
-    if len(content) > 50 * 1024 * 1024:  # 50 MB limit
+    if len(content) > 50 * 1024 * 1024:
         raise HTTPException(413, "File too large (max 50 MB)")
-
     try:
         result = kb.ingest_file(file.filename, content, category)
         return {"success": True, **result}
@@ -83,8 +92,7 @@ async def ingest_file(
         raise HTTPException(500, "Ingestion failed — check server logs")
 
 
-# ── Ingest: URL ────────────────────────────────────────────────────────────────
-
+# ── Ingest: URL ─────────────────────────────────────────────────────────────────
 class UrlIngestRequest(BaseModel):
     url: str
     category: str = "general"
@@ -102,34 +110,65 @@ def ingest_url(req: UrlIngestRequest):
         raise HTTPException(500, str(e))
 
 
-# ── Query ─────────────────────────────────────────────────────────────────────
-
+# ── Query — KB → web fallback ───────────────────────────────────────────────────
 class QueryRequest(BaseModel):
     question: str
     top_k: int = TOP_K
 
 
 @app.post("/query")
-def query(req: QueryRequest):
+async def query(req: QueryRequest):
     if kb is None:
         raise HTTPException(503, "Knowledge base not ready")
     if not req.question.strip():
         raise HTTPException(422, "question is required")
 
-    results = kb.query(req.question, top_k=req.top_k)
-    # Return context as a single joined string + individual chunks for transparency
-    context = "\n\n---\n\n".join(
-        f"[Source: {r['filename']}]\n{r['text']}" for r in results
-    )
+    # ── Step 1: KB search ────────────────────────────────────────────────────
+    raw_results = kb.query(req.question, top_k=req.top_k)
+    # Filter to only high-confidence chunks
+    kb_results = [r for r in raw_results if r["score"] >= MIN_SCORE]
+
+    if kb_results:
+        context = "\n\n---\n\n".join(
+            f"[Source: {r['filename']} | Category: {r['category']}]\n{r['text']}"
+            for r in kb_results
+        )
+        return {
+            "context":  context,
+            "chunks":   kb_results,
+            "total":    len(kb_results),
+            "source":   "knowledge_base",
+            "grounded": True,
+        }
+
+    # ── Step 2: Web search fallback (trane.com + thermoking.com only) ────────
+    if ENABLE_WEB_SEARCH:
+        logger.info(f"KB miss for '{req.question[:60]}' — trying web search")
+        web_results = await search_official_sites(req.question)
+        if web_results:
+            context = "\n\n---\n\n".join(
+                f"[Source: {r['url']}]\n{r['content']}" for r in web_results
+            )
+            return {
+                "context":  context,
+                "chunks":   web_results,
+                "total":    len(web_results),
+                "source":   "web_search",
+                "grounded": True,
+            }
+
+    # ── Step 3: Nothing found — tell Node.js not to hallucinate ─────────────
+    logger.info(f"No grounded answer found for: '{req.question[:60]}'")
     return {
-        "context": context,
-        "chunks":  results,
-        "total":   len(results),
+        "context":  "",
+        "chunks":   [],
+        "total":    0,
+        "source":   "none",
+        "grounded": False,
     }
 
 
-# ── List documents ─────────────────────────────────────────────────────────────
-
+# ── List documents ──────────────────────────────────────────────────────────────
 @app.get("/documents")
 def list_documents():
     if kb is None:
@@ -137,8 +176,7 @@ def list_documents():
     return {"documents": kb.list_documents()}
 
 
-# ── Delete document ────────────────────────────────────────────────────────────
-
+# ── Delete document ─────────────────────────────────────────────────────────────
 @app.delete("/documents/{doc_id}")
 def delete_document(doc_id: str):
     if kb is None:
@@ -149,7 +187,7 @@ def delete_document(doc_id: str):
     return {"success": True, "doc_id": doc_id}
 
 
-# ── Dev run ───────────────────────────────────────────────────────────────────
+# ── Dev run ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
