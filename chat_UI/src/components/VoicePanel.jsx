@@ -276,86 +276,126 @@ const VoicePanel = ({ onBack, getAIResponse, sessionDataRef, onEndSession, onSes
   const isBusy = voiceState === 'Processing';
   const isListening = voiceState === 'Listening';
 
-  // ── CHAT MODE: swap content in-place, no overlay ─────────────────
+  // ── CHAT MODE ────────────────────────────────────────────────────
   if (showChat) {
     return (
       <div className="voice-panel-container">
-        {/* Chat header */}
-        <div className="voice-header">
-          <button className="icon-glass-button back-btn" onClick={() => setShowChat(false)}>
-            <ChevronLeft size={20} color="#FFF" />
+
+        {/* ── Chat header ── */}
+        <div className="voice-header" style={{ borderBottom: '1px solid rgba(169,112,255,0.15)', paddingBottom: 10 }}>
+          <button className="icon-glass-button back-btn" onClick={() => setShowChat(false)} title="Back to Voice">
+            <Mic size={17} color="#A970FF" />
           </button>
-          <h2 className="header-title">Text Support</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h2 className="header-title" style={{ fontSize: 14, marginBottom: 1 }}>Text Support</h2>
+            <span style={{ fontSize: 10, color: '#5EDCFF', letterSpacing: 0.8, opacity: 0.8 }}>YAZHNI · ONLINE</span>
+          </div>
           <button
             onClick={() => { setShowChat(false); setShowSummary(true); }}
             style={{
               fontSize: 11, fontWeight: 600, color: '#fca5a5',
               background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.4)',
-              borderRadius: 20, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit',
+              borderRadius: 20, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
             }}
-          >
-            End Session
-          </button>
+          >End Session</button>
         </div>
 
-        {/* Chat messages — uses the same dynamic-content-area that already scrolls correctly */}
-        <div className="dynamic-content-area">
+        {/* ── Messages area ── */}
+        <div className="dynamic-content-area" style={{ padding: '12px 16px 4px' }}>
+
+          {/* Empty state */}
           {chatMessages.length === 0 && (
-            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, textAlign: 'center', marginTop: 24 }}>
-              Type your question below and Yazhni will respond here.
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 32, gap: 12 }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%',
+                background: 'linear-gradient(135deg, rgba(169,112,255,0.3), rgba(94,220,255,0.15))',
+                border: '2px solid rgba(169,112,255,0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 0 20px rgba(169,112,255,0.2)',
+              }}>
+                <span style={{ fontSize: 22 }}>🤖</span>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Hi! I'm Yazhni</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Ask me anything about Trane or ThermoKing</p>
+              </div>
+              {/* Quick prompts */}
+              {['My AC is not cooling', 'ThermoKing fault code', 'Schedule a service'].map(q => (
+                <button key={q} onClick={() => { setChatInput(q); }}
+                  style={{
+                    background: 'rgba(169,112,255,0.08)', border: '1px solid rgba(169,112,255,0.25)',
+                    borderRadius: 20, padding: '7px 14px', color: 'rgba(255,255,255,0.7)',
+                    fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s',
+                  }}>
+                  {q}
+                </button>
+              ))}
             </div>
           )}
+
+          {/* Messages */}
           {chatMessages.map(msg => (
-            <div key={msg.id} style={{ display: 'flex', width: '100%', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
+            <div key={msg.id} style={{ display: 'flex', width: '100%', alignItems: 'flex-end', gap: 8, justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start', marginBottom: 12 }}>
+              {msg.sender === 'ai' && (
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,rgba(169,112,255,0.4),rgba(94,220,255,0.2))', border: '1px solid rgba(169,112,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13 }}>🤖</div>
+              )}
               <div style={{
-                maxWidth: '78%', padding: '10px 14px', fontSize: 13, lineHeight: 1.55,
-                borderRadius: 18,
+                maxWidth: '72%', padding: '10px 14px', fontSize: 13, lineHeight: 1.6, borderRadius: 18,
                 ...(msg.sender === 'user'
-                  ? { background: '#A970FF', color: '#fff', borderBottomRightRadius: 4, boxShadow: '0 3px 12px rgba(169,112,255,0.3)' }
-                  : { background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)', borderBottomLeftRadius: 4 }
+                  ? { background: 'linear-gradient(135deg,#7c3aed,#A970FF)', color: '#fff', borderBottomRightRadius: 4, boxShadow: '0 4px 16px rgba(169,112,255,0.35)' }
+                  : { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.88)', borderBottomLeftRadius: 4 }
                 ),
-              }}>
-                {msg.text}
-              </div>
+              }}>{msg.text}</div>
             </div>
           ))}
+
+          {/* Typing indicator */}
           {isChatTyping && (
-            <div style={{ display: 'flex', gap: 4, padding: '10px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, borderBottomLeftRadius: 4, width: 'fit-content', marginBottom: 10 }}>
-              {[0,1,2].map(i => (
-                <span key={i} style={{ display: 'block', width: 6, height: 6, background: '#5EDCFF', borderRadius: '50%', animation: `bounceDots 1.4s infinite ease-in-out`, animationDelay: i === 0 ? '-0.32s' : i === 1 ? '-0.16s' : '0s' }} />
-              ))}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,rgba(169,112,255,0.4),rgba(94,220,255,0.2))', border: '1px solid rgba(169,112,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13 }}>🤖</div>
+              <div style={{ display: 'flex', gap: 4, padding: '12px 16px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 18, borderBottomLeftRadius: 4 }}>
+                {['-0.32s','-0.16s','0s'].map((d,i) => (
+                  <span key={i} style={{ display: 'block', width: 7, height: 7, background: '#5EDCFF', borderRadius: '50%', animation: 'bounceDots 1.4s infinite ease-in-out', animationDelay: d }} />
+                ))}
+              </div>
             </div>
           )}
           <div ref={chatEndRef} />
         </div>
 
-        {/* Chat input — uses same bottom-controls area */}
-        <div className="bottom-controls" style={{ padding: '8px 16px 16px' }}>
+        {/* ── Input bar ── */}
+        <div style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 16px 18px',
+          borderTop: '1px solid rgba(169,112,255,0.1)',
+        }}>
+          {/* Switch to voice button */}
+          <button onClick={() => setShowChat(false)} title="Switch to Voice"
+            style={{ width: 40, height: 40, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(169,112,255,0.1)', border: '1px solid rgba(169,112,255,0.25)', cursor: 'pointer' }}>
+            <Mic size={16} color="#A970FF" />
+          </button>
           <input
-            type="text"
-            placeholder="Type your message…"
+            type="text" placeholder="Type your message…"
             value={chatInput}
             onChange={e => setChatInput(e.target.value)}
             onKeyDown={handleChatKey}
             autoFocus
             style={{
-              flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.07)',
-              border: '1px solid rgba(169,112,255,0.3)', color: '#fff',
-              padding: '12px 18px', borderRadius: 100, outline: 'none',
-              fontFamily: 'inherit', fontSize: 14,
+              flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(169,112,255,0.25)', color: '#fff',
+              padding: '11px 18px', borderRadius: 100, outline: 'none',
+              fontFamily: 'inherit', fontSize: 13,
             }}
           />
-          <button
-            onClick={handleChatSend}
-            disabled={isChatTyping}
+          <button onClick={handleChatSend} disabled={isChatTyping}
             style={{
-              width: 44, height: 44, flexShrink: 0, borderRadius: '50%',
-              display: 'flex', justifyContent: 'center', alignItems: 'center',
-              background: 'rgba(169,112,255,0.15)', border: '1px solid rgba(169,112,255,0.35)',
-              cursor: 'pointer',
-            }}
-          >
-            <Send size={16} color="#A970FF" />
+              width: 40, height: 40, flexShrink: 0, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: chatInput.trim() ? 'linear-gradient(135deg,#7c3aed,#A970FF)' : 'rgba(169,112,255,0.1)',
+              border: '1px solid rgba(169,112,255,0.35)', cursor: 'pointer',
+              transition: 'background 0.2s',
+            }}>
+            <Send size={15} color="#fff" />
           </button>
         </div>
 
