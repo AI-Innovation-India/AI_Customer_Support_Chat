@@ -3,7 +3,10 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 python-dotenv==1.0.1
 
-# Vector DB — Pinecone (handles storage + embeddings in one)
+# Embeddings — Azure OpenAI text-embedding-3-small
+openai==1.51.0
+
+# Vector DB — Pinecone (stores + searches vectors)
 pinecone==5.4.2
 
 # Web search fallback (Tavily — optional, set TAVILY_API_KEY to enable)

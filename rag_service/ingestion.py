@@ -1,12 +1,14 @@
 """
-Document ingestion pipeline — Pinecone vector store.
+Document ingestion pipeline — Azure OpenAI embeddings + Pinecone vector store.
 
-Pinecone handles BOTH storage AND embeddings via its built-in inference model
-(multilingual-e5-large). No OpenAI / Azure embedding key required.
+Embedding model : text-embedding-3-small (via Azure OpenAI — same key as chat)
+Vector store    : Pinecone serverless (standard index, 1536-dim)
 
 Flow:
-  File/URL → parse → plain text → chunks → Pinecone upsert (with inference)
-  Query    → Pinecone semantic search (with inference) → top-K chunks
+  File/URL → parse → plain text → chunks
+           → Azure OpenAI embeds each chunk
+           → Pinecone stores vectors + metadata
+  Query    → Azure OpenAI embeds query → Pinecone similarity search → top-K
 """
 
 import io
@@ -19,34 +21,46 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
+from openai import AzureOpenAI
 from pinecone import Pinecone, ServerlessSpec
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-PINECONE_KEY   = os.getenv("PINECONE_API_KEY", "")
-INDEX_NAME     = os.getenv("PINECONE_INDEX_NAME", "trane-thermoking-kb")
-PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")
+# ── Config ──────────────────────────────────────────────────────────────────────
+PINECONE_KEY    = os.getenv("PINECONE_API_KEY", "")
+INDEX_NAME      = os.getenv("PINECONE_INDEX_NAME", "trane-thermoking-kb")
+PINECONE_CLOUD  = os.getenv("PINECONE_CLOUD", "aws")
 PINECONE_REGION = os.getenv("PINECONE_REGION", "us-east-1")
 
-# Pinecone's built-in embedding model — no external key needed
-# multilingual-e5-large: 1024-dim, supports English + many languages
-EMBED_MODEL    = "multilingual-e5-large"
-EMBED_DIM      = 1024
+# Azure OpenAI — text-embedding-3-small (1536 dimensions)
+AZURE_ENDPOINT    = os.getenv("AZURE_ENDPOINT", "")
+AZURE_KEY         = os.getenv("AZURE_KEY", "")
+AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2024-02-01")
+EMBED_DEPLOYMENT  = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-small")
+EMBED_DIM         = 1536
 
-CHUNK_SIZE     = int(os.getenv("CHUNK_SIZE", 800))
-CHUNK_OVERLAP  = int(os.getenv("CHUNK_OVERLAP", 150))
+CHUNK_SIZE    = int(os.getenv("CHUNK_SIZE", 800))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150))
+BATCH_SIZE    = 100   # vectors per Pinecone upsert call
 
-# Local metadata store (Pinecone doesn't store arbitrary metadata well for listing)
-# We keep a small JSON file to track doc_id → filename, category, chunk count
-META_DIR       = Path(os.getenv("KB_STORAGE_PATH", "./knowledge_base"))
+if not AZURE_ENDPOINT or not AZURE_KEY:
+    raise RuntimeError("AZURE_ENDPOINT and AZURE_KEY must be set in rag_service/.env")
+if not PINECONE_KEY:
+    raise RuntimeError("PINECONE_API_KEY must be set in rag_service/.env")
+
+# ── Clients ─────────────────────────────────────────────────────────────────────
+_embed_client = AzureOpenAI(
+    azure_endpoint=AZURE_ENDPOINT,
+    api_key=AZURE_KEY,
+    api_version=AZURE_API_VERSION,
+)
 
 
 # ── Text Extractors ─────────────────────────────────────────────────────────────
 
 def extract_pdf(content: bytes) -> str:
-    import fitz  # PyMuPDF
+    import fitz
     doc = fitz.open(stream=content, filetype="pdf")
     return "\n\n".join(page.get_text() for page in doc)
 
@@ -100,40 +114,41 @@ def extract_text_from_file(filename: str, content: bytes) -> str:
         return extract_text(content)
 
 
-# ── Knowledge Base ─────────────────────────────────────────────────────────────
+# ── Embeddings ──────────────────────────────────────────────────────────────────
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed a batch via Azure OpenAI text-embedding-3-small."""
+    response = _embed_client.embeddings.create(
+        model=EMBED_DEPLOYMENT,
+        input=texts,
+    )
+    return [r.embedding for r in response.data]
+
+
+# ── Knowledge Base ──────────────────────────────────────────────────────────────
 
 class KnowledgeBase:
     def __init__(self, storage_path: str = "./knowledge_base"):
-        if not PINECONE_KEY:
-            raise RuntimeError("PINECONE_API_KEY is not set in .env")
-
         self.meta_dir  = Path(storage_path)
         self.meta_dir.mkdir(parents=True, exist_ok=True)
         self.meta_path = self.meta_dir / "metadata.json"
         self.splitter  = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
-
-        # Connect to Pinecone
         self.pc = Pinecone(api_key=PINECONE_KEY)
         self._ensure_index()
         self._load_meta()
 
     def _ensure_index(self):
-        """Create the Pinecone index if it doesn't exist yet."""
         existing = [idx.name for idx in self.pc.list_indexes()]
         if INDEX_NAME not in existing:
-            logger.info(f"Creating Pinecone index '{INDEX_NAME}' …")
-            self.pc.create_index_for_model(
+            logger.info(f"Creating Pinecone index '{INDEX_NAME}' (dim={EMBED_DIM}) …")
+            self.pc.create_index(
                 name=INDEX_NAME,
-                cloud=PINECONE_CLOUD,
-                region=PINECONE_REGION,
-                embed={
-                    "model":       EMBED_MODEL,
-                    "field_map":   {"text": "chunk_text"},   # field to embed
-                },
+                dimension=EMBED_DIM,
+                metric="cosine",
+                spec=ServerlessSpec(cloud=PINECONE_CLOUD, region=PINECONE_REGION),
             )
-            # Wait until ready
             while not self.pc.describe_index(INDEX_NAME).status.ready:
                 time.sleep(1)
             logger.info(f"Index '{INDEX_NAME}' ready")
@@ -142,7 +157,7 @@ class KnowledgeBase:
     def _load_meta(self):
         if self.meta_path.exists():
             with open(self.meta_path) as f:
-                self.metadata: dict = json.load(f)  # {doc_id: {filename, category, chunks, ingested_at}}
+                self.metadata: dict = json.load(f)
         else:
             self.metadata: dict = {}
 
@@ -162,35 +177,40 @@ class KnowledgeBase:
         if not chunks:
             raise ValueError("Document produced no chunks after splitting")
 
-        # Pinecone upsert format for inference-enabled index:
-        # Each record has an _id and the text field that gets embedded
-        records = []
-        for i, chunk in enumerate(chunks):
-            records.append({
-                "_id":        f"{doc_id}#{i}",
-                "chunk_text": chunk,           # this field is embedded by Pinecone
-                "doc_id":     doc_id,
-                "filename":   filename,
-                "category":   category,
-                "chunk_idx":  i,
-            })
+        chunk_ids = [f"{doc_id}#{i}" for i in range(len(chunks))]
 
-        # Upsert in batches of 96 (Pinecone limit for inference upserts)
-        batch_size = 96
-        for start in range(0, len(records), batch_size):
-            self.index.upsert_records(
+        # Embed in batches (Azure has per-request token limits)
+        all_vectors = []
+        for i in range(0, len(chunks), BATCH_SIZE):
+            batch_texts = chunks[i : i + BATCH_SIZE]
+            batch_vecs  = embed_texts(batch_texts)
+            for j, (vec, text) in enumerate(zip(batch_vecs, batch_texts)):
+                idx = i + j
+                all_vectors.append({
+                    "id":     chunk_ids[idx],
+                    "values": vec,
+                    "metadata": {
+                        "doc_id":   doc_id,
+                        "filename": filename,
+                        "category": category,
+                        "text":     text,         # stored so we can retrieve it
+                    },
+                })
+
+        # Upsert to Pinecone in batches
+        for i in range(0, len(all_vectors), BATCH_SIZE):
+            self.index.upsert(
+                vectors=all_vectors[i : i + BATCH_SIZE],
                 namespace="kb",
-                records=records[start : start + batch_size],
             )
 
-        # Store doc metadata locally for listing/deletion
         self.metadata[doc_id] = {
             "doc_id":      doc_id,
             "filename":    filename,
             "category":    category,
             "chunks":      len(chunks),
             "ingested_at": int(time.time()),
-            "chunk_ids":   [f"{doc_id}#{i}" for i in range(len(chunks))],
+            "chunk_ids":   chunk_ids,
         }
         self._save_meta()
 
@@ -204,49 +224,47 @@ class KnowledgeBase:
     # ── Query ─────────────────────────────────────────────────────────────────
 
     def query(self, question: str, top_k: int = 5) -> list[dict]:
-        """Semantic search using Pinecone inference — no embedding key needed."""
-        results = self.index.search(
+        """Embed question via Azure OpenAI → cosine search in Pinecone."""
+        vec = embed_texts([question])[0]
+        results = self.index.query(
+            vector=vec,
+            top_k=top_k,
             namespace="kb",
-            query={"inputs": {"text": question}, "top_k": top_k},
-            fields=["chunk_text", "filename", "category", "doc_id"],
+            include_metadata=True,
         )
-
         hits = []
-        for match in results.get("result", {}).get("hits", []):
-            fields = match.get("fields", {})
+        for match in results.get("matches", []):
+            meta = match.get("metadata", {})
             hits.append({
-                "text":     fields.get("chunk_text", ""),
-                "filename": fields.get("filename", ""),
-                "category": fields.get("category", ""),
-                "doc_id":   fields.get("doc_id", ""),
-                "score":    match.get("_score", 0.0),
+                "text":     meta.get("text", ""),
+                "filename": meta.get("filename", ""),
+                "category": meta.get("category", ""),
+                "doc_id":   meta.get("doc_id", ""),
+                "score":    match.get("score", 0.0),
             })
         return hits
 
-    # ── List ─────────────────────────────────────────────────────────────────
+    # ── List & Delete ─────────────────────────────────────────────────────────
 
     def list_documents(self) -> list[dict]:
         return list(self.metadata.values())
-
-    # ── Delete ────────────────────────────────────────────────────────────────
 
     def delete_document(self, doc_id: str) -> bool:
         if doc_id not in self.metadata:
             return False
         chunk_ids = self.metadata[doc_id].get("chunk_ids", [])
         if chunk_ids:
-            # Pinecone delete by vector IDs
             self.index.delete(ids=chunk_ids, namespace="kb")
         del self.metadata[doc_id]
         self._save_meta()
-        logger.info(f"Deleted doc {doc_id} ({len(chunk_ids)} chunks removed)")
+        logger.info(f"Deleted doc {doc_id} ({len(chunk_ids)} chunks)")
         return True
 
     @property
     def index_total(self) -> int:
-        """Approximate vector count from Pinecone stats."""
         try:
             stats = self.index.describe_index_stats()
-            return stats.get("total_vector_count", 0)
+            ns = stats.get("namespaces", {}).get("kb", {})
+            return ns.get("vector_count", 0)
         except Exception:
             return 0
