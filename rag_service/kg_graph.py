@@ -52,8 +52,53 @@ AZURE_DEPLOY          = os.getenv("AZURE_DEPLOYMENT", "")
 AZURE_EMBED_DEPLOY    = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-small")
 OPENAI_API_KEY        = os.getenv("OPENAI_API_KEY", "")
 GROQ_KEY              = os.getenv("GROQ_KEY", "")
+PINECONE_API_KEY      = os.getenv("PINECONE_API_KEY", "")
 
 KG_ENABLED = bool(NEO4J_URI and NEO4J_PASSWORD)
+
+
+# ── Pinecone embedder for Graphiti ─────────────────────────────────────────────
+# Reuses the same Pinecone multilingual-e5-large model already used for
+# document ingestion — no OpenAI key required for embeddings.
+class _PineconeEmbedder:
+    """EmbedderClient implementation backed by Pinecone inference API."""
+
+    def __init__(self):
+        from pinecone import Pinecone
+        self._pc = Pinecone(api_key=PINECONE_API_KEY)
+
+    async def create(self, input_data) -> list[float]:
+        if isinstance(input_data, str):
+            texts = [input_data]
+        else:
+            texts = list(input_data)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: self._pc.inference.embed(
+                model="multilingual-e5-large",
+                inputs=texts,
+                parameters={"input_type": "passage", "truncate": "END"},
+            )
+        )
+        # Return first vector
+        item = result[0]
+        return item.values if hasattr(item, "values") else item.get("values", [])
+
+    async def create_batch(self, input_data_list: list[str]) -> list[list[float]]:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: self._pc.inference.embed(
+                model="multilingual-e5-large",
+                inputs=input_data_list,
+                parameters={"input_type": "passage", "truncate": "END"},
+            )
+        )
+        out = []
+        for item in result:
+            out.append(item.values if hasattr(item, "values") else item.get("values", []))
+        return out
 
 
 async def _probe_azure_llm() -> bool:
@@ -164,8 +209,9 @@ def _build_graphiti(use_azure: bool):
         )
         logger.info(f"KG LLM: Azure OpenAI ({AZURE_DEPLOY})")
 
-    elif GROQ_KEY and OPENAI_API_KEY:
-        # Groq for LLM (fast, free) + OpenAI for embeddings
+    elif GROQ_KEY and PINECONE_API_KEY:
+        # Groq for LLM (fast, free) + Pinecone multilingual-e5-large for embeddings
+        # No OpenAI key needed — reuses the same Pinecone key already in .env
         from openai import AsyncOpenAI
         from graphiti_core.llm_client.openai_client import OpenAIClient
 
@@ -180,12 +226,8 @@ def _build_graphiti(use_azure: bool):
             ),
             client=groq_client,
         )
-        oai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-        embedder = OpenAIEmbedder(
-            config=OpenAIEmbedderConfig(embedding_model="text-embedding-3-small"),
-            client=oai_client,
-        )
-        logger.info("KG LLM: Groq llama-3.1-8b-instant + OpenAI embeddings")
+        embedder = _PineconeEmbedder()
+        logger.info("KG LLM: Groq llama-3.1-8b-instant + Pinecone multilingual-e5-large")
 
     elif OPENAI_API_KEY:
         from openai import AsyncOpenAI
@@ -204,9 +246,8 @@ def _build_graphiti(use_azure: bool):
 
     else:
         raise RuntimeError(
-            "KG needs a reachable LLM. Add one of these to rag_service/.env:\n"
-            "  OPENAI_API_KEY=sk-...   (OpenAI)\n"
-            "  GROQ_KEY=gsk_... + OPENAI_API_KEY=sk-...   (Groq LLM + OpenAI embeddings)"
+            "KG needs a reachable LLM. Add GROQ_KEY to rag_service/.env "
+            "(your Pinecone key handles embeddings automatically)."
         )
 
     graph_driver = _build_neo4j_driver(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
