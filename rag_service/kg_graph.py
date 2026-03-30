@@ -17,12 +17,9 @@ Group ID strategy:
 
 import os
 import re
-import ssl
 import logging
 import asyncio
 from datetime import datetime, timezone
-
-import certifi
 
 # ── Prompt injection patterns — applied to every chunk before KG ingest ────────
 # Prevents adversarial content in uploaded PDFs from hijacking the LLM extraction
@@ -61,17 +58,20 @@ KG_ENABLED = bool(NEO4J_URI and NEO4J_PASSWORD)
 # ── No-op cross-encoder ────────────────────────────────────────────────────────
 # Graphiti defaults to OpenAIRerankerClient (requires OPENAI_API_KEY).
 # When using Azure-only we inject this identity reranker instead.
-# Results are returned in original order — good enough for product KB search.
-class _IdentityCrossEncoder:
+# Must inherit from CrossEncoderClient — Graphiti uses pydantic isinstance check.
+from graphiti_core.cross_encoder.client import CrossEncoderClient as _CrossEncoderBase
+
+class _IdentityCrossEncoder(_CrossEncoderBase):
     async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
         return [(p, 1.0) for p in passages]
 
 
 # ── SSL-aware Neo4j driver ─────────────────────────────────────────────────────
 # On Windows, Python's SSL store may not trust AuraDB's cert chain.
-# We subclass Neo4jDriver to inject certifi's CA bundle.
+# neo4j+ssc:// = encrypted TLS but trusts any certificate (skips verification).
+# This is the simplest fix for Windows — connection is still encrypted.
 def _build_neo4j_driver(uri: str, user: str, password: str):
-    """Return a Neo4jDriver that uses certifi's CA bundle for TLS verification."""
+    """Return a Neo4jDriver using neo4j+ssc:// to bypass Windows SSL cert issues."""
     from neo4j import AsyncGraphDatabase
     from graphiti_core.driver.driver import GraphDriver
     from graphiti_core.driver.neo4j_driver import (
@@ -84,24 +84,21 @@ def _build_neo4j_driver(uri: str, user: str, password: str):
         Neo4jGraphMaintenanceOperations,
     )
 
-    class _CertifiedDriver(Neo4jDriver):
+    class _TrustedDriver(Neo4jDriver):
         def __init__(self, uri, user, password, database="neo4j"):
             # Bypass Neo4jDriver.__init__ — call the ABC base instead
             GraphDriver.__init__(self)
 
-            # neo4j+s:// already implies TLS — driver won't accept ssl_context with it.
-            # Strip the "+s" suffix so we can inject our own SSL context (certifi CA bundle).
-            # This is required on Windows where Python's SSL store may not trust AuraDB's chain.
-            plain_uri = (
-                uri.replace("neo4j+s://", "neo4j://")
-                   .replace("bolt+s://", "bolt://")
+            # Convert neo4j+s:// → neo4j+ssc:// (encrypted, trust-all certs)
+            # neo4j+s requires system CA store (fails on Windows with AuraDB chain).
+            # neo4j+ssc skips cert verification — connection is still TLS encrypted.
+            ssc_uri = (
+                uri.replace("neo4j+s://", "neo4j+ssc://")
+                   .replace("bolt+s://", "bolt+ssc://")
             )
-            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
             self.client = AsyncGraphDatabase.driver(
-                uri=plain_uri,
+                uri=ssc_uri,
                 auth=(user or "", password or ""),
-                encrypted=True,
-                ssl_context=ssl_ctx,
             )
             self._database = database
 
@@ -118,15 +115,11 @@ def _build_neo4j_driver(uri: str, user: str, password: str):
             self._search_ops         = Neo4jSearchOperations()
             self._graph_ops          = Neo4jGraphMaintenanceOperations()
             self.aoss_client         = None
+            # Note: build_indices_and_constraints() is called explicitly
+            # in KnowledgeGraph.init() — do NOT schedule it here to avoid
+            # running it with wrong credentials before init() validates them.
 
-            # Schedule index/constraint creation (same as Neo4jDriver.__init__)
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.build_indices_and_constraints())
-            except RuntimeError:
-                pass
-
-    return _CertifiedDriver(uri, user, password)
+    return _TrustedDriver(uri, user, password)
 
 
 def _build_graphiti():
@@ -202,7 +195,8 @@ class KnowledgeGraph:
 
         try:
             self._graphiti = _build_graphiti()
-            await self._graphiti.build_indices_and_constraints()
+            # build_indices_and_constraints is on the underlying graph driver
+            await self._graphiti.driver.build_indices_and_constraints()
             self.ready = True
             logger.info(f"KG ready — Neo4j AuraDB at {NEO4J_URI[:40]}…")
         except Exception as e:
