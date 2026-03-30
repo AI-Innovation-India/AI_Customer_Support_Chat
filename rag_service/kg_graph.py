@@ -60,7 +60,10 @@ KG_ENABLED = bool(NEO4J_URI and NEO4J_PASSWORD)
 # ── Pinecone embedder for Graphiti ─────────────────────────────────────────────
 # Reuses the same Pinecone multilingual-e5-large model already used for
 # document ingestion — no OpenAI key required for embeddings.
-class _PineconeEmbedder:
+# Must inherit from EmbedderClient — Graphiti uses pydantic isinstance check.
+from graphiti_core.embedder.client import EmbedderClient as _EmbedderBase
+
+class _PineconeEmbedder(_EmbedderBase):
     """EmbedderClient implementation backed by Pinecone inference API."""
 
     def __init__(self):
