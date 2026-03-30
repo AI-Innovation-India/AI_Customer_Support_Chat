@@ -48,11 +48,25 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
 AZURE_ENDPOINT        = os.getenv("AZURE_ENDPOINT", "")
 AZURE_KEY             = os.getenv("AZURE_KEY", "")
 AZURE_API_VERSION     = os.getenv("AZURE_API_VERSION", "2024-08-01-preview")
-AZURE_DEPLOY          = os.getenv("AZURE_DEPLOYMENT", "")          # chat model
+AZURE_DEPLOY          = os.getenv("AZURE_DEPLOYMENT", "")
 AZURE_EMBED_DEPLOY    = os.getenv("AZURE_EMBED_DEPLOYMENT", "text-embedding-3-small")
 OPENAI_API_KEY        = os.getenv("OPENAI_API_KEY", "")
+GROQ_KEY              = os.getenv("GROQ_KEY", "")
 
 KG_ENABLED = bool(NEO4J_URI and NEO4J_PASSWORD)
+
+
+async def _probe_azure_llm() -> bool:
+    """Return True if Azure OpenAI LLM endpoint is reachable (3-second timeout)."""
+    if not (AZURE_ENDPOINT and AZURE_KEY and AZURE_DEPLOY):
+        return False
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.get(AZURE_ENDPOINT.rstrip("/"), headers={"api-key": AZURE_KEY})
+        return True
+    except Exception:
+        return False
 
 
 # ── No-op cross-encoder ────────────────────────────────────────────────────────
@@ -122,16 +136,11 @@ def _build_neo4j_driver(uri: str, user: str, password: str):
     return _TrustedDriver(uri, user, password)
 
 
-def _build_graphiti():
+def _build_graphiti(use_azure: bool):
     """Construct and return a Graphiti instance. Called once at startup."""
-    if not KG_ENABLED:
-        return None
-
     from graphiti_core import Graphiti
     from graphiti_core.llm_client import LLMConfig
     from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
-
-    use_azure = bool(AZURE_ENDPOINT and AZURE_KEY)
 
     if use_azure:
         from openai import AsyncAzureOpenAI
@@ -154,7 +163,31 @@ def _build_graphiti():
             client=azure_client,
         )
         logger.info(f"KG LLM: Azure OpenAI ({AZURE_DEPLOY})")
-    else:
+
+    elif GROQ_KEY and OPENAI_API_KEY:
+        # Groq for LLM (fast, free) + OpenAI for embeddings
+        from openai import AsyncOpenAI
+        from graphiti_core.llm_client.openai_client import OpenAIClient
+
+        groq_client = AsyncOpenAI(
+            api_key=GROQ_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        llm_client = OpenAIClient(
+            config=LLMConfig(
+                model="llama-3.1-8b-instant",
+                small_model="llama-3.1-8b-instant",
+            ),
+            client=groq_client,
+        )
+        oai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        embedder = OpenAIEmbedder(
+            config=OpenAIEmbedderConfig(embedding_model="text-embedding-3-small"),
+            client=oai_client,
+        )
+        logger.info("KG LLM: Groq llama-3.1-8b-instant + OpenAI embeddings")
+
+    elif OPENAI_API_KEY:
         from openai import AsyncOpenAI
         from graphiti_core.llm_client.openai_client import OpenAIClient
 
@@ -168,6 +201,13 @@ def _build_graphiti():
             client=oai_client,
         )
         logger.info("KG LLM: OpenAI gpt-4o-mini")
+
+    else:
+        raise RuntimeError(
+            "KG needs a reachable LLM. Add one of these to rag_service/.env:\n"
+            "  OPENAI_API_KEY=sk-...   (OpenAI)\n"
+            "  GROQ_KEY=gsk_... + OPENAI_API_KEY=sk-...   (Groq LLM + OpenAI embeddings)"
+        )
 
     graph_driver = _build_neo4j_driver(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 
@@ -194,7 +234,13 @@ class KnowledgeGraph:
             return
 
         try:
-            self._graphiti = _build_graphiti()
+            # Probe Azure LLM before committing to it — fails fast instead of
+            # retrying on every chunk if Azure is blocked on this network.
+            use_azure = await _probe_azure_llm()
+            if not use_azure and AZURE_ENDPOINT:
+                logger.warning("KG: Azure LLM unreachable — checking fallback (GROQ_KEY / OPENAI_API_KEY)")
+
+            self._graphiti = _build_graphiti(use_azure=use_azure)
             # build_indices_and_constraints is on the underlying graph driver
             await self._graphiti.driver.build_indices_and_constraints()
             self.ready = True
